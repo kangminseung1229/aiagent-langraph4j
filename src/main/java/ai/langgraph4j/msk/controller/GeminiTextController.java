@@ -106,4 +106,10 @@ public class GeminiTextController {
 				model));
 	}
 
+	@PostMapping("/streaming")
+	public ResponseEntity<String> streaming(@RequestBody SystemInstructionRequest request) {
+		geminiTextService.streaming(request.getSystemInstruction(), request.getUserPrompt(), request.getModel());
+		return ResponseEntity.ok("streaming completed");
+	}
+
 }

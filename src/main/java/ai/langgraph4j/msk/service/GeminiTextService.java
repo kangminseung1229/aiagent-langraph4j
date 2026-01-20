@@ -3,6 +3,7 @@ package ai.langgraph4j.msk.service;
 import org.springframework.stereotype.Service;
 
 import com.google.genai.Client;
+import com.google.genai.ResponseStream;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
@@ -108,5 +109,24 @@ public class GeminiTextService {
 	 */
 	public String systemInstruction(String systemInstruction, String userPrompt) {
 		return systemInstruction(systemInstruction, userPrompt, "gemini-3-flash-preview");
+	}
+
+	public void streaming(String systemInstruction, String userPrompt, String model) {
+		String modelName = (model != null && !model.isEmpty()) ? model : "gemini-3-flash-preview";
+
+		GenerateContentConfig config = null;
+		if (systemInstruction != null && !systemInstruction.isEmpty()) {
+			config = GenerateContentConfig.builder()
+					.systemInstruction(Content.fromParts(Part.fromText(systemInstruction)))
+					.build();
+		}
+
+		ResponseStream<GenerateContentResponse> responseStream = client.models.generateContentStream(
+				modelName, userPrompt, config);
+
+		for (GenerateContentResponse res : responseStream) {
+			System.out.print(res.text());
+		}
+		responseStream.close();
 	}
 }
