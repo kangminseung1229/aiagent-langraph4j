@@ -80,4 +80,10 @@ public class GeminiTextController {
 			throw new RuntimeException("텍스트 생성 중 오류가 발생했습니다: " + e.getMessage(), e);
 		}
 	}
+
+	@PostMapping("/thinking")
+	public String thinking(@RequestBody String prompt) {
+		return geminiTextService.thinking(prompt);
+	}
+	
 }

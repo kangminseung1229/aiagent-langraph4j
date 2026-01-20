@@ -44,6 +44,8 @@ dependencies {
 	
 	// Spring AI - Google GenAI (Gemini with API key support)
 	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+	// Google GenAI SDK - 최신 버전으로 업데이트 (thinkingLevel 지원)
+	implementation 'com.google.genai:google-genai:1.35.0'
 	// Spring AI Chat Client (ChatClient 사용을 위해 필요)
 	implementation 'org.springframework.ai:spring-ai-client-chat'
 	// Ollama 사용 시 주석 해제하고 Google GenAI 주석 처리

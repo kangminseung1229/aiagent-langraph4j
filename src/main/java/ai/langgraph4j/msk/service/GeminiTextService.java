@@ -3,7 +3,10 @@ package ai.langgraph4j.msk.service;
 import org.springframework.stereotype.Service;
 
 import com.google.genai.Client;
+import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.ThinkingConfig;
+import com.google.genai.types.ThinkingLevel;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +26,7 @@ public class GeminiTextService {
 	 * 텍스트 입력을 받아 Gemini API로 응답을 생성합니다.
 	 * 
 	 * @param prompt 사용자 입력 프롬프트
-	 * @param model 사용할 모델명 (기본값: gemini-3-flash-preview)
+	 * @param model  사용할 모델명 (기본값: gemini-3-flash-preview)
 	 * @return 생성된 텍스트 응답
 	 */
 	public String generateText(String prompt, String model) {
@@ -58,5 +61,17 @@ public class GeminiTextService {
 	 */
 	public String generateText(String prompt) {
 		return generateText(prompt, "gemini-3-flash-preview");
+	}
+
+	public String thinking(String param) {
+		GenerateContentConfig config = GenerateContentConfig.builder()
+				.thinkingConfig(ThinkingConfig.builder()
+						.thinkingLevel(new ThinkingLevel("low")))
+				.build();
+
+		GenerateContentResponse response = client.models.generateContent("gemini-3-flash-preview",
+				param != null ? param : "How does AI work?", config);
+
+		return response.text();
 	}
 }

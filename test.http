@@ -6,3 +6,11 @@ Content-Type: application/json
   "prompt": "인공지능이 무엇인지 간단히 설명해주세요",
   "model": "gemini-3-flash-preview"
 }
+
+### thinking
+POST http://localhost:8080/api/gemini/thinking
+Content-Type: application/json
+
+{
+  "prompt": "인공지능이 무엇인지 간단히 설명해주세요"
+}
