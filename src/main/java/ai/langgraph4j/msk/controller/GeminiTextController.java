@@ -1,0 +1,83 @@
+package ai.langgraph4j.msk.controller;
+
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import ai.langgraph4j.msk.controller.dto.TextGenerationRequest;
+import ai.langgraph4j.msk.controller.dto.TextGenerationResponse;
+import ai.langgraph4j.msk.service.GeminiTextService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Google Gemini API를 사용한 텍스트 생성 컨트롤러
+ * 샘플 코드를 기반으로 작성된 REST API 엔드포인트
+ */
+@Slf4j
+@RestController
+@RequestMapping("/api/gemini")
+@RequiredArgsConstructor
+public class GeminiTextController {
+
+	private final GeminiTextService geminiTextService;
+
+	/**
+	 * POST 요청으로 텍스트 생성
+	 * 
+	 * @param request 텍스트 생성 요청 (JSON)
+	 * @return 생성된 텍스트 응답
+	 */
+	@PostMapping("/generate")
+	public ResponseEntity<TextGenerationResponse> generateText(@RequestBody TextGenerationRequest request) {
+		log.info("GeminiTextController: 텍스트 생성 요청 - {}", request.getPrompt());
+
+		try {
+			String model = (request.getModel() != null && !request.getModel().isEmpty())
+					? request.getModel()
+					: "gemini-3-flash-preview";
+
+			String response = geminiTextService.generateText(request.getPrompt(), model);
+
+			TextGenerationResponse responseDto = new TextGenerationResponse();
+			responseDto.setResponse(response);
+			responseDto.setModel(model);
+
+			return ResponseEntity.ok(responseDto);
+		} catch (Exception e) {
+			log.error("GeminiTextController: 텍스트 생성 중 오류 발생", e);
+			throw new RuntimeException("텍스트 생성 중 오류가 발생했습니다: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * GET 요청으로 간단한 텍스트 생성 (쿼리 파라미터 사용)
+	 * 
+	 * @param prompt 사용자 입력 프롬프트
+	 * @param model  사용할 모델명 (선택사항, 기본값: gemini-3-flash-preview)
+	 * @return 생성된 텍스트 응답
+	 */
+	@GetMapping("/generate")
+	public ResponseEntity<TextGenerationResponse> generateTextGet(
+			@RequestParam String prompt,
+			@RequestParam(required = false, defaultValue = "gemini-3-flash-preview") String model) {
+		log.info("GeminiTextController: GET 텍스트 생성 요청 - 모델: {}, 프롬프트: {}", model, prompt);
+
+		try {
+			String response = geminiTextService.generateText(prompt, model);
+
+			TextGenerationResponse responseDto = new TextGenerationResponse();
+			responseDto.setResponse(response);
+			responseDto.setModel(model);
+
+			return ResponseEntity.ok(responseDto);
+		} catch (Exception e) {
+			log.error("GeminiTextController: 텍스트 생성 중 오류 발생", e);
+			throw new RuntimeException("텍스트 생성 중 오류가 발생했습니다: " + e.getMessage(), e);
+		}
+	}
+}

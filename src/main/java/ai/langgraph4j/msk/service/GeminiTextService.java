@@ -1,0 +1,62 @@
+package ai.langgraph4j.msk.service;
+
+import org.springframework.stereotype.Service;
+
+import com.google.genai.Client;
+import com.google.genai.types.GenerateContentResponse;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * Google Gemini API를 사용한 텍스트 생성 서비스
+ * 샘플 코드를 기반으로 작성된 서비스 클래스
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class GeminiTextService {
+
+	private final Client client;
+
+	/**
+	 * 텍스트 입력을 받아 Gemini API로 응답을 생성합니다.
+	 * 
+	 * @param prompt 사용자 입력 프롬프트
+	 * @param model 사용할 모델명 (기본값: gemini-3-flash-preview)
+	 * @return 생성된 텍스트 응답
+	 */
+	public String generateText(String prompt, String model) {
+		log.info("GeminiTextService: 텍스트 생성 요청 - 모델: {}, 프롬프트: {}", model, prompt);
+
+		try {
+			String modelName = (model != null && !model.isEmpty()) ? model : "gemini-3-flash-preview";
+
+			GenerateContentResponse response = client.models.generateContent(
+					modelName,
+					prompt,
+					null);
+
+			String result = response.text();
+			log.info("GeminiTextService: 텍스트 생성 완료 - 응답 길이: {}자", result.length());
+
+			return result;
+		} catch (RuntimeException e) {
+			log.error("GeminiTextService: 텍스트 생성 중 오류 발생", e);
+			throw e;
+		} catch (Exception e) {
+			log.error("GeminiTextService: 텍스트 생성 중 오류 발생", e);
+			throw new RuntimeException("텍스트 생성 중 오류가 발생했습니다: " + e.getMessage(), e);
+		}
+	}
+
+	/**
+	 * 기본 모델(gemini-3-flash-preview)을 사용하여 텍스트를 생성합니다.
+	 * 
+	 * @param prompt 사용자 입력 프롬프트
+	 * @return 생성된 텍스트 응답
+	 */
+	public String generateText(String prompt) {
+		return generateText(prompt, "gemini-3-flash-preview");
+	}
+}

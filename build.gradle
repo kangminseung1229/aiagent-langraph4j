@@ -1,0 +1,75 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.1'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'ai.langgraph4j'
+version = '0.0.1-SNAPSHOT'
+description = 'Demo project for Spring Boot'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(17)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+ext {
+	springAiVersion = '1.1.0'
+	langgraph4jVersion = '1.7.5'
+}
+
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:${springAiVersion}"
+		mavenBom "org.bsc.langgraph4j:langgraph4j-bom:${langgraph4jVersion}"
+	}
+}
+
+dependencies {
+	// Spring Boot Starters
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+	
+	// Spring AI - Google GenAI (Gemini with API key support)
+	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+	// Spring AI Chat Client (ChatClient 사용을 위해 필요)
+	implementation 'org.springframework.ai:spring-ai-client-chat'
+	// Ollama 사용 시 주석 해제하고 Google GenAI 주석 처리
+	// implementation 'org.springframework.ai:spring-ai-ollama'
+	
+	// LangGraph4j Core
+	implementation "org.bsc.langgraph4j:langgraph4j-core"
+	
+	// LangGraph4j Spring AI 통합
+	implementation "org.bsc.langgraph4j:langgraph4j-spring-ai"
+	
+	// LangChain4j (LangGraph4j에서 사용)
+	implementation 'dev.langchain4j:langchain4j:0.34.0'
+	
+	// Lombok
+	compileOnly 'org.projectlombok:lombok'
+	annotationProcessor 'org.projectlombok:lombok'
+	
+	// Development
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	
+	// Testing
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
