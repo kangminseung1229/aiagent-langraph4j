@@ -68,3 +68,60 @@ Content-Type: application/json
   "systemInstruction": "당신은 세무사입니다. 세무용어가 나오면 사전적 정의와 현 시대적 의미를 함께 설명해주세요.",
   "userPrompt": "이중과세란 무엇인가요?"
 }
+
+### ============================================
+### Agent Test Controller
+### ============================================
+
+### Agent Invoke - 기본 요청 (계산 요청)
+POST http://localhost:8080/api/test/agent/invoke
+Content-Type: application/json
+
+{
+  "message": "123 + 456을 계산해줘",
+  "sessionId": "test-session-1"
+}
+
+### Agent Invoke - 간단한 질문
+POST http://localhost:8080/api/test/agent/invoke
+Content-Type: application/json
+
+{
+  "message": "안녕하세요! 오늘 날씨가 어때요?",
+  "sessionId": "test-session-2"
+}
+
+### Agent Invoke - 복잡한 계산 요청
+POST http://localhost:8080/api/test/agent/invoke
+Content-Type: application/json
+
+{
+  "message": "100을 4로 나눈 값은 얼마인가요?",
+  "sessionId": "test-session-3"
+}
+
+### Agent Invoke - 곱셈 계산
+POST http://localhost:8080/api/test/agent/invoke
+Content-Type: application/json
+
+{
+  "message": "10 * 5는 얼마인가요?",
+  "sessionId": "test-session-4"
+}
+
+### Agent Invoke - 세션 ID 없이
+POST http://localhost:8080/api/test/agent/invoke
+Content-Type: application/json
+
+{
+  "message": "인공지능이 무엇인지 간단히 설명해주세요"
+}
+
+### Agent Health Check
+POST http://localhost:8080/api/test/agent/invoke
+content-type: application/json
+
+{
+  "message": "안녕하세요! 오늘 날씨가 어때요?",
+  "sessionId": "test-session-2"
+}

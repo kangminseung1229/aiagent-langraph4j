@@ -9,6 +9,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.retry.NonTransientAiException;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import ai.langgraph4j.msk.agent.state.AgentState;
@@ -30,6 +31,9 @@ public class LlmNode {
 
 	private final ChatModel chatModel;
 
+	@Value("${agent.max-iterations:5}")
+	private int maxIterations;
+
 	public LlmNode(@Qualifier("chatModel") ChatModel chatModel) {
 		this.chatModel = chatModel;
 	}
@@ -41,9 +45,20 @@ public class LlmNode {
 	 * @return 업데이트된 상태
 	 */
 	public AgentState process(AgentState state) {
-		log.debug("LlmNode: LLM 호출 시작");
+		log.debug("LlmNode: LLM 호출 시작, 현재 반복 횟수: {}", state.getIterationCount());
+
+		// LLM 호출 횟수 제한 체크
+		if (state.getIterationCount() >= maxIterations) {
+			log.warn("LlmNode: 최대 LLM 호출 횟수 초과 ({}), LLM 호출을 건너뜁니다", maxIterations);
+			state.setError("최대 LLM 호출 횟수(" + maxIterations + "회)를 초과했습니다. 요청이 너무 복잡합니다.");
+			state.setCurrentStep("error");
+			return state;
+		}
 
 		try {
+			// 반복 횟수 증가 (LLM 호출 전에 증가)
+			state.incrementIterationCount();
+
 			// 대화 히스토리 준비
 			List<Message> messages = prepareMessages(state);
 
@@ -55,15 +70,26 @@ public class LlmNode {
 			String content = response.getResult().getOutput().getText();
 			AiMessage aiMessage = new AiMessage(content);
 
-			// 도구 실행 요청 추출 (간단한 구현, 실제로는 더 복잡할 수 있음)
-			List<ToolExecutionRequest> toolRequests = extractToolRequests(aiMessage);
+			// 도구 실행 요청 추출
+			// 주의: Tool 실행 결과가 이미 있으면 (Tool 실행 후 재호출),
+			// LLM이 최종 응답을 생성하는 것이므로 Tool 요청을 생성하지 않음
+			List<ToolExecutionRequest> toolRequests = new ArrayList<>();
+			boolean hasToolResults = state.getToolExecutionResults() != null &&
+					!state.getToolExecutionResults().isEmpty();
+
+			if (!hasToolResults) {
+				// Tool 실행 결과가 없을 때만 Tool 요청 추출 (사용자 원본 요청에서만)
+				toolRequests = extractToolRequests(aiMessage);
+				log.debug("LlmNode: Tool 요청 추출 - {}개", toolRequests.size());
+			} else {
+				log.debug("LlmNode: Tool 실행 결과가 있으므로 Tool 요청 추출 건너뜀 (최종 응답 생성 단계)");
+			}
 
 			// 상태 업데이트
 			state.setAiMessage(aiMessage);
 			state.setToolExecutionRequests(toolRequests);
 			state.getMessages().add(aiMessage);
 			state.setCurrentStep("llm");
-			state.incrementIterationCount();
 
 			log.debug("LlmNode: LLM 호출 완료, 반복 횟수: {}", state.getIterationCount());
 
@@ -132,11 +158,85 @@ public class LlmNode {
 
 	/**
 	 * AI 메시지에서 도구 실행 요청 추출
-	 * (간단한 구현, 실제로는 LangChain4j의 ToolExecutionRequest 파싱 필요)
+	 * 
+	 * Phase 2에서는 간단한 텍스트 파싱 방식으로 구현합니다.
+	 * Phase 3에서 Spring AI Tool 통합으로 개선 예정입니다.
+	 * 
+	 * 현재는 계산 요청을 감지하여 CalculatorTool 호출 요청을 생성합니다.
 	 */
 	private List<ToolExecutionRequest> extractToolRequests(AiMessage aiMessage) {
-		// 실제 구현에서는 AiMessage에서 ToolExecutionRequest를 추출해야 함
-		// 현재는 빈 리스트 반환 (Phase 3에서 구현 예정)
-		return new ArrayList<>();
+		List<ToolExecutionRequest> toolRequests = new ArrayList<>();
+
+		if (aiMessage == null || aiMessage.text() == null) {
+			return toolRequests;
+		}
+
+		String text = aiMessage.text().toLowerCase();
+
+		// 계산 요청 감지 패턴
+		// 예: "123 + 456", "계산해줘", "10 * 5는?", "100을 4로 나눈 값" 등
+		if (containsCalculationRequest(text)) {
+			// 계산 표현식 추출 시도
+			String expression = extractCalculationExpression(aiMessage.text());
+			if (expression != null && !expression.isEmpty()) {
+				ToolExecutionRequest request = ToolExecutionRequest.builder()
+						.name("calculator")
+						.arguments(expression)
+						.build();
+				toolRequests.add(request);
+				log.debug("LlmNode: 계산 요청 감지 - {}", expression);
+			}
+		}
+
+		return toolRequests;
+	}
+
+	/**
+	 * 텍스트에 계산 요청이 포함되어 있는지 확인
+	 */
+	private boolean containsCalculationRequest(String text) {
+		// 계산 관련 키워드
+		String[] calculationKeywords = {
+				"계산", "더하기", "빼기", "곱하기", "나누기",
+				"calculate", "compute", "add", "subtract", "multiply", "divide",
+				"+", "-", "*", "/", "×", "÷"
+		};
+
+		for (String keyword : calculationKeywords) {
+			if (text.contains(keyword)) {
+				return true;
+			}
+		}
+
+		// 숫자와 연산자 패턴 (예: "123 + 456", "10*5")
+		if (text.matches(".*\\d+\\s*[+\\-*/×÷]\\s*\\d+.*")) {
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * 텍스트에서 계산 표현식 추출
+	 * 예: "123 + 456을 계산해줘" -> "123 + 456"
+	 */
+	private String extractCalculationExpression(String text) {
+		// 숫자와 연산자 패턴 매칭
+		java.util.regex.Pattern pattern = java.util.regex.Pattern.compile(
+				"(\\d+(?:\\.\\d+)?)\\s*([+\\-*/×÷])\\s*(\\d+(?:\\.\\d+)?)");
+		java.util.regex.Matcher matcher = pattern.matcher(text);
+
+		if (matcher.find()) {
+			String operand1 = matcher.group(1);
+			String operator = matcher.group(2);
+			String operand2 = matcher.group(3);
+
+			// 연산자 변환 (× -> *, ÷ -> /)
+			operator = operator.replace("×", "*").replace("÷", "/");
+
+			return operand1 + " " + operator + " " + operand2;
+		}
+
+		return null;
 	}
 }
