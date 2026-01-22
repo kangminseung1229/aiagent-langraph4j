@@ -33,17 +33,17 @@ docker-compose up -d
 
 ```bash
 # 이미지 빌드
-docker build -t msk-app .
+docker build -t aiagent-app .
 
 # 컨테이너 실행
 docker run -d \
-  --name msk-app \
+  --name aiagent-app \
   -p 8080:8080 \
   -e GEMINI_API_KEY=your-api-key \
   -e DB_URL=jdbc:postgresql://host.docker.internal:5432/consultation_db \
   -e DB_USER=postgres \
   -e DB_PASSWORD=postgres \
-  msk-app
+  aiagent-app
 ```
 
 ### 4. 로그 확인

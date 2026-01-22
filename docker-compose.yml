@@ -4,7 +4,7 @@ services:
   # PostgreSQL 데이터베이스
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: msk-postgres
+    container_name: aiagent-postgres
     environment:
       POSTGRES_DB: consultation_db
       POSTGRES_USER: postgres
@@ -26,7 +26,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: msk-app
+    container_name: aiagent-app
     depends_on:
       postgres:
         condition: service_healthy

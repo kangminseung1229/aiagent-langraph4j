@@ -107,7 +107,7 @@ public class DataSourceConfig {
             @Qualifier("counselDataSource") DataSource dataSource) {
         return builder
                 .dataSource(dataSource)
-                .packages("ai.langgraph4j.msk.entity")
+                .packages("ai.langgraph4j.aiagent.entity")
                 .persistenceUnit("counsel")
                 .build();
     }

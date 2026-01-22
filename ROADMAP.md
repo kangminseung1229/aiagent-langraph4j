@@ -88,7 +88,7 @@ Spring AI와 LangGraph4j를 활용하여 지능형 AI 에이전트를 구축하�
 #### 주요 작업
 - [ ] **프로젝트 구조 설정**
   ```
-  src/main/java/ai/langgraph4j/msk/
+  src/main/java/ai/langgraph4j/aiagent/
   ├── agent/
   │   ├── state/          # State 정의
   │   ├── nodes/          # Node 구현

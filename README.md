@@ -30,7 +30,7 @@ spring.ai.google.genai.api-key=your-api-key-here
 ./gradlew bootRun
 ```
 
-또는 IDE에서 `MskApplication` 클래스를 실행
+또는 IDE에서 `AiagentApplication` 클래스를 실행
 
 ### 4. API 테스트
 
@@ -112,14 +112,14 @@ curl -X POST http://localhost:8080/api/test/agent/invoke \
 ## 📦 프로젝트 구조
 
 ```
-src/main/java/ai/langgraph4j/msk/
+src/main/java/ai/langgraph4j/aiagent/
 ├── agent/
 │   ├── graph/          # 에이전트 그래프 정의
 │   ├── nodes/          # 노드 구현 (Input, LLM, Conditional, Response)
 │   └── state/          # 에이전트 상태 관리
 ├── config/             # Spring AI 설정
 ├── controller/         # REST API 컨트롤러
-└── MskApplication.java # 메인 애플리케이션
+└── AiagentApplication.java # 메인 애플리케이션
 ```
 
 ## ⚠️ 주의사항

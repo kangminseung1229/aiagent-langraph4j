@@ -32,7 +32,7 @@ private List<LawArticleCode> lawArticleCodes = new ArrayList<>();
 ```
 
 #### 파일 위치
-- `src/main/java/ai/langgraph4j/msk/entity/counsel/Counsel.java`
+- `src/main/java/ai/langgraph4j/aiagent/entity/counsel/Counsel.java`
 
 ---
 
@@ -61,7 +61,7 @@ private List<CounselFieldLarge> reEtcCounselCode = new ArrayList<>();
 ```
 
 #### 파일 위치
-- `src/main/java/ai/langgraph4j/msk/entity/counsel/Counselor.java`
+- `src/main/java/ai/langgraph4j/aiagent/entity/counsel/Counselor.java`
 
 ---
 
@@ -95,7 +95,7 @@ public class EmbeddingConfig {
 - 수동 설정보다 간단하고 유지보수가 용이합니다.
 
 #### 파일 위치
-- `src/main/java/ai/langgraph4j/msk/config/EmbeddingConfig.java`
+- `src/main/java/ai/langgraph4j/aiagent/config/EmbeddingConfig.java`
 
 ---
 
@@ -186,7 +186,7 @@ public VectorStore vectorStore(EmbeddingModel embeddingModel, JdbcTemplate jdbcT
    - `withDimensions()` → `dimensions()`
 
 #### 파일 위치
-- `src/main/java/ai/langgraph4j/msk/config/VectorStoreConfig.java`
+- `src/main/java/ai/langgraph4j/aiagent/config/VectorStoreConfig.java`
 
 ---
 
@@ -226,7 +226,7 @@ consultation.getCounselAt()         // ✅
 | `getCreatedAt()` | `getCounselAt()` | `counselAt` |
 
 #### 파일 위치
-- `src/main/java/ai/langgraph4j/msk/service/ConsultationEmbeddingService.java`
+- `src/main/java/ai/langgraph4j/aiagent/service/ConsultationEmbeddingService.java`
 
 ---
 

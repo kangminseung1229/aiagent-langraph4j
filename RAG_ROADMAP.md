@@ -340,7 +340,7 @@
 ## 📁 프로젝트 구조
 
 ```
-src/main/java/ai/langgraph4j/msk/
+src/main/java/ai/langgraph4j/aiagent/
 ├── agent/
 │   ├── graph/
 │   │   └── AgentGraph.java          # RAG 검색 노드 통합

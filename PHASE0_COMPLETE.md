@@ -24,7 +24,7 @@
 다음 디렉토리 구조가 생성되었습니다:
 
 ```
-src/main/java/ai/langgraph4j/msk/
+src/main/java/ai/langgraph4j/aiagent/
 ├── config/
 │   └── AiConfig.java          # Spring AI 설정 클래스
 ├── agent/

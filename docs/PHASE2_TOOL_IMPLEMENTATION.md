@@ -3,7 +3,7 @@
 ## 완료된 작업
 
 ### ✅ 1. ToolNode 구현
-- **파일**: `src/main/java/ai/langgraph4j/msk/agent/nodes/ToolNode.java`
+- **파일**: `src/main/java/ai/langgraph4j/aiagent/agent/nodes/ToolNode.java`
 - **기능**:
   - `ToolExecutionRequest` 리스트를 받아서 각 도구를 실행
   - `CalculatorTool` 통합
@@ -11,7 +11,7 @@
   - 에러 처리 및 로깅
 
 ### ✅ 2. LlmNode 개선
-- **파일**: `src/main/java/ai/langgraph4j/msk/agent/nodes/LlmNode.java`
+- **파일**: `src/main/java/ai/langgraph4j/aiagent/agent/nodes/LlmNode.java`
 - **개선 사항**:
   - `extractToolRequests()` 메서드 구현
   - LLM 응답 텍스트에서 계산 요청 감지
@@ -19,7 +19,7 @@
   - `ToolExecutionRequest` 생성
 
 ### ✅ 3. AgentGraph 통합
-- **파일**: `src/main/java/ai/langgraph4j/msk/agent/graph/AgentGraph.java`
+- **파일**: `src/main/java/ai/langgraph4j/aiagent/agent/graph/AgentGraph.java`
 - **개선 사항**:
   - `ToolNode` 통합
   - 반복 루프 구현 (Tool 실행 → LLM 재호출)
@@ -117,7 +117,7 @@ curl "http://localhost:8080/api/test/agent/test?message=10*5는%20얼마인가�
 ## 코드 구조
 
 ```
-src/main/java/ai/langgraph4j/msk/
+src/main/java/ai/langgraph4j/aiagent/
 ├── agent/
 │   ├── graph/
 │   │   └── AgentGraph.java          # 그래프 실행 로직 (반복 루프 포함)

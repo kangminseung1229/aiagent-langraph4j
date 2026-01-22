@@ -7,8 +7,8 @@
 ## 📁 전체 프로젝트 구조
 
 ```
-src/main/java/ai/langgraph4j/msk/
-├── MskApplication.java          # Spring Boot 메인 애플리케이션 클래스
+src/main/java/ai/langgraph4j/aiagent/
+├── AiagentApplication.java          # Spring Boot 메인 애플리케이션 클래스
 ├── config/                      # 설정 클래스들
 │   └── AiConfig.java           # Spring AI 설정 (ChatModel, ChatClient)
 ├── agent/                      # AI 에이전트 핵심 로직
