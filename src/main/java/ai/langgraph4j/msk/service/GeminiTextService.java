@@ -26,6 +26,7 @@ import com.google.genai.types.Part;
 import com.google.genai.types.ThinkingConfig;
 import com.google.genai.types.ThinkingLevel;
 
+import ai.langgraph4j.msk.service.dto.SearchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -44,6 +45,7 @@ public class GeminiTextService {
 
 	private final Client client;
 	private final ChatModel chatModel;
+	private final ConsultationSearchService consultationSearchService;
 
 	/**
 	 * 텍스트 입력을 받아 Gemini API로 응답을 생성합니다.
@@ -76,10 +78,10 @@ public class GeminiTextService {
 				// Google GenAI Java SDK의 ThinkingConfig.Builder 사용
 				// Spring AI 1.1.1과 Google GenAI SDK 1.35.0에서 includeThoughts 지원
 				ThinkingConfig.Builder thinkingConfigBuilder = ThinkingConfig.builder();
-				
+
 				// 모델에 따라 thinkingLevel 또는 thinkingBudget 설정
 				boolean isGemini3Model = modelName != null && modelName.contains("gemini-3");
-				
+
 				if (isGemini3Model) {
 					// Gemini 3 모델: thinkingLevel 사용
 					thinkingConfigBuilder.thinkingLevel(new ThinkingLevel("high"));
@@ -87,7 +89,7 @@ public class GeminiTextService {
 					// Gemini 2.5 이전 모델: thinkingBudget 사용
 					thinkingConfigBuilder.thinkingBudget(4096);
 				}
-				
+
 				// includeThoughts 메서드 호출 시도 (Google GenAI SDK 1.35.0에서 지원)
 				try {
 					// 먼저 직접 메서드 호출 시도
@@ -267,14 +269,30 @@ public class GeminiTextService {
 
 		CompletableFuture.runAsync(() -> {
 			try {
-				// Phase 3: Spring AI ChatModel을 사용하여 Tool 자동 호출 지원
-				// Spring AI가 자동으로 Tool을 호출하고 결과를 LLM에 전달합니다.
+				// RAG 패턴: 벡터 검색을 통해 관련 상담 데이터 검색
+				String searchContext = "";
+				try {
+					log.info("벡터 검색 시작 - query: {}", userPrompt);
+					var searchResults = consultationSearchService.search(userPrompt, 10, 0.6);
+
+					if (!searchResults.isEmpty()) {
+						searchContext = formatSearchResultsForContext(searchResults);
+						log.info("벡터 검색 완료 - {}건의 결과를 컨텍스트로 추가", searchResults.size());
+					} else {
+						log.warn("벡터 검색 결과가 없습니다");
+					}
+				} catch (Exception e) {
+					log.error("벡터 검색 중 오류 발생 (계속 진행)", e);
+					// 검색 실패해도 계속 진행
+				}
 
 				// 메시지 준비
 				List<Message> messages = new ArrayList<>();
-				if (systemInstruction != null && !systemInstruction.isEmpty()) {
-					messages.add(new SystemMessage(systemInstruction));
-				}
+
+				// System Instruction 구성 (벡터 검색 결과 포함)
+				String finalSystemInstruction = buildSystemInstruction(systemInstruction, searchContext);
+				messages.add(new SystemMessage(finalSystemInstruction));
+
 				messages.add(new UserMessage(userPrompt));
 
 				// Spring AI ChatModel이 StreamingChatModel을 구현하는지 확인
@@ -301,13 +319,15 @@ public class GeminiTextService {
 								}
 							})
 							.subscribe(chatResponse -> {
+								String content = chatResponse.getResult().getOutput().getText();
+								if (content == null || content.isEmpty()) {
+									return;
+								}
+
 								try {
-									String content = chatResponse.getResult().getOutput().getText();
-									if (content != null && !content.isEmpty()) {
-										emitter.send(SseEmitter.event()
-												.name("message")
-												.data(content));
-									}
+									emitter.send(SseEmitter.event()
+											.name("message")
+											.data(content));
 								} catch (IOException e) {
 									log.error("스트리밍 메시지 전송 중 오류", e);
 									emitter.completeWithError(e);
@@ -339,4 +359,66 @@ public class GeminiTextService {
 
 		return emitter;
 	}
+
+	/**
+	 * System Instruction을 구성합니다.
+	 * 사용자 제공 System Instruction과 벡터 검색 결과를 결합합니다.
+	 * 
+	 * @param systemInstruction 사용자가 제공한 System Instruction (선택사항)
+	 * @param searchContext     벡터 검색 결과 컨텍스트 (선택사항)
+	 * @return 완성된 System Instruction 문자열
+	 */
+	private String buildSystemInstruction(String systemInstruction, String searchContext) {
+		StringBuilder systemInstructionBuilder = new StringBuilder();
+
+		if (systemInstruction != null && !systemInstruction.isEmpty()) {
+			systemInstructionBuilder.append(systemInstruction).append("\n\n");
+		}
+
+		// 벡터 검색 결과가 있으면 System Instruction에 추가
+		if (!searchContext.isEmpty()) {
+			systemInstructionBuilder.append(searchContext);
+		}
+
+		return systemInstructionBuilder.toString();
+	}
+
+	/**
+	 * 검색 결과를 LLM 컨텍스트로 사용할 수 있는 형태로 포맷팅
+	 * 
+	 * @param results 검색 결과 리스트
+	 * @return 포맷팅된 검색 결과 문자열
+	 */
+	private String formatSearchResultsForContext(List<SearchResult> results) {
+		StringBuilder sb = new StringBuilder();
+
+		for (int i = 0; i < results.size(); i++) {
+			var result = results.get(i);
+			sb.append("\n[상담 사례 ").append(i + 1).append("]\n");
+
+			if (result.getTitle() != null) {
+				sb.append("제목: ").append(result.getTitle()).append("\n");
+			}
+
+			if (result.getFieldLarge() != null) {
+				sb.append("분야: ").append(result.getFieldLarge()).append("\n");
+			}
+
+			if (result.getContent() != null) {
+				// 내용이 너무 길면 잘라서 표시
+				String content = result.getContent();
+				if (content.length() > 800) {
+					content = content.substring(0, 800) + "...";
+				}
+				sb.append("내용: ").append(content).append("\n");
+			}
+
+			if (result.getSimilarityScore() != null) {
+				sb.append("유사도: ").append(String.format("%.2f", result.getSimilarityScore())).append("\n");
+			}
+		}
+
+		return sb.toString();
+	}
+
 }

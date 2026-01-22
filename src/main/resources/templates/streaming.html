@@ -169,7 +169,7 @@
 
 <body>
     <div class="container">
-        <h1>🤖 AI Agent 스트리밍 테스트</h1>
+        <h1>🤖 Gemini 벡터 검색 스트리밍 테스트</h1>
 
         <form id="streamingForm">
             <div class="form-group">
@@ -181,12 +181,7 @@
             <div class="form-group">
                 <label for="message">메시지 *</label>
                 <textarea id="message" name="message" required
-                    placeholder="질문을 입력하세요... (예: 123 + 456을 계산해줘)"></textarea>
-            </div>
-
-            <div class="form-group">
-                <label for="sessionId">Session ID (선택사항)</label>
-                <input type="text" id="sessionId" name="sessionId" placeholder="세션 ID를 입력하세요...">
+                    placeholder="질문을 입력하세요... (예: 퇴직금 계산 방법을 알려주세요)"></textarea>
             </div>
 
             <button type="submit" id="submitBtn">스트리밍 시작</button>
@@ -212,7 +207,6 @@
 
             const systemInstruction = document.getElementById('systemInstruction').value;
             const message = document.getElementById('message').value;
-            const sessionId = document.getElementById('sessionId').value;
 
             if (!message.trim()) {
                 alert('메시지를 입력해주세요.');
@@ -232,11 +226,8 @@
             status.className = 'status connecting';
             status.textContent = '연결 중...';
 
-            // SSE URL 구성 (Agent 엔드포인트)
-            let url = '/api/test/agent/stream?message=' + encodeURIComponent(message);
-            if (sessionId && sessionId.trim()) {
-                url += '&sessionId=' + encodeURIComponent(sessionId.trim());
-            }
+            // SSE URL 구성 (Gemini 엔드포인트)
+            let url = '/api/gemini/streaming-sse?userPrompt=' + encodeURIComponent(message);
             if (systemInstruction && systemInstruction.trim()) {
                 url += '&systemInstruction=' + encodeURIComponent(systemInstruction.trim());
             }
@@ -244,20 +235,8 @@
             // EventSource로 SSE 연결
             eventSource = new EventSource(url);
 
-            // 시작 이벤트
-            eventSource.addEventListener('start', function (event) {
-                status.className = 'status streaming';
-                status.textContent = '에이전트 실행 시작...';
-            });
-
-            // 단계 진행 이벤트
-            eventSource.addEventListener('step', function (event) {
-                status.className = 'status streaming';
-                status.textContent = '처리 중: ' + event.data;
-            });
-
-            // LLM 응답 청크 이벤트
-            eventSource.addEventListener('chunk', function (event) {
+            // LLM 응답 메시지 이벤트 (Gemini 스트리밍)
+            eventSource.addEventListener('message', function (event) {
                 const data = event.data;
                 responseContent.textContent += data;
                 status.className = 'status streaming';
@@ -265,14 +244,6 @@
 
                 // 자동 스크롤
                 responseContainer.scrollTop = responseContainer.scrollHeight;
-            });
-
-            // 최종 응답 이벤트
-            eventSource.addEventListener('response', function (event) {
-                const data = event.data;
-                responseContent.textContent = data; // 최종 응답으로 교체
-                status.className = 'status complete';
-                status.textContent = '응답 완료';
             });
 
             // 완료 이벤트
@@ -286,9 +257,9 @@
 
             // 에러 이벤트
             eventSource.addEventListener('error', function (event) {
-                console.error('에이전트 오류:', event.data);
+                console.error('스트리밍 오류:', event);
                 status.className = 'status error';
-                status.textContent = '오류: ' + event.data;
+                status.textContent = '연결 오류가 발생했습니다.';
                 submitBtn.disabled = false;
                 if (eventSource) {
                     eventSource.close();
