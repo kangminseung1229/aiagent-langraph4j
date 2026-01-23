@@ -1,11 +1,13 @@
 package ai.langgraph4j.aiagent.controller;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import ai.langgraph4j.aiagent.controller.dto.TokenEstimateResponse;
 import ai.langgraph4j.aiagent.service.CounselEmbeddingService;
 import ai.langgraph4j.aiagent.service.LawArticleEmbeddingService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -152,6 +154,39 @@ public class EmbeddingController {
 		return ResponseEntity.ok(new EmbeddingResponse(
 				"법령 ID " + lawId + " 임베딩 완료",
 				count));
+	}
+
+	/**
+	 * 특정 법령 ID의 조문 임베딩 토큰 수 및 비용 예상 계산
+	 * 
+	 * @param lawId 법령 ID
+	 * @return 토큰 계산 결과
+	 */
+	@Operation(
+			summary = "법령 조문 임베딩 토큰 수 및 비용 예상 계산",
+			description = "지정된 법령 ID의 최신 조문들을 임베딩할 때 예상되는 토큰 수와 비용을 계산합니다. "
+					+ "lawKey 기준 최신 LawBasicInformation을 구하고, LawArticleMetadata로 임베딩한다고 가정하여 계산합니다."
+	)
+	@ApiResponses(value = {
+			@ApiResponse(
+					responseCode = "200",
+					description = "토큰 계산 완료",
+					content = @Content(schema = @Schema(implementation = TokenEstimateResponse.class))
+			),
+			@ApiResponse(
+					responseCode = "400",
+					description = "법령을 찾을 수 없음"
+			)
+	})
+	@GetMapping("/law/{lawId}/token-estimate")
+	public ResponseEntity<TokenEstimateResponse> estimateTokensByLawId(
+			@Parameter(description = "법령 ID", required = true, example = "법령ID001")
+			@PathVariable String lawId) {
+		log.info("법령 ID {} 토큰 계산 요청", lawId);
+
+		TokenEstimateResponse response = lawArticleEmbeddingService.estimateTokensByLawId(lawId);
+
+		return ResponseEntity.ok(response);
 	}
 
 	/**

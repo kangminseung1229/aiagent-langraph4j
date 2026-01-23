@@ -1,5 +1,7 @@
 package ai.langgraph4j.aiagent.service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -13,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import ai.langgraph4j.aiagent.controller.dto.TokenEstimateResponse;
 import ai.langgraph4j.aiagent.entity.law.Article;
 import ai.langgraph4j.aiagent.entity.law.LawBasicInformation;
 import ai.langgraph4j.aiagent.metadata.LawArticleMetadata;
@@ -361,5 +364,119 @@ public class LawArticleEmbeddingService {
 
 		// TODO: JdbcTemplate을 주입받아서 SQL 실행하도록 구현
 		// 또는 VectorStore 확장하여 deleteByMetadata 메서드 추가
+	}
+
+	/**
+	 * 특정 lawId의 법령 조문에 대한 토큰 수와 비용을 예상 계산
+	 * 
+	 * @param lawId 법령ID
+	 * @return 토큰 계산 결과
+	 */
+	@Transactional(readOnly = true)
+	public TokenEstimateResponse estimateTokensByLawId(String lawId) {
+		log.info("법령 ID {}의 토큰 계산 시작", lawId);
+
+		// 1. lawId별 최신 법령 조회
+		LawBasicInformation law = lawBasicInformationRepository.findLatestByLawId(lawId)
+				.orElseThrow(() -> new IllegalArgumentException("법령을 찾을 수 없습니다: " + lawId));
+
+		// 2. 조문 목록 조회 (삭제되지 않은 조문만)
+		List<Article> articles = law.getArticles();
+
+		if (articles.isEmpty()) {
+			log.warn("법령 ID {} (lawId: {})에 조문이 없습니다", law.getId(), lawId);
+			return TokenEstimateResponse.builder()
+					.lawId(lawId)
+					.lawNameKorean(law.getLawNameKorean())
+					.lawKey(law.getLawKey())
+					.embeddingModel("gemini-embedding-001")
+					.costPerMillionTokens(new BigDecimal("0.15"))
+					.totalArticles(0)
+					.totalChunks(0)
+					.totalTokens(0L)
+					.estimatedCost(BigDecimal.ZERO)
+					.articleDetails(List.of())
+					.build();
+		}
+
+		// 3. 각 조문에 대해 토큰 계산
+		List<TokenEstimateResponse.ArticleTokenInfo> articleDetails = new ArrayList<>();
+		long totalTokens = 0;
+		int totalChunks = 0;
+
+		// 모델 정보
+		String embeddingModel = "gemini-embedding-001";
+		BigDecimal costPerMillionTokens = new BigDecimal("0.15");
+		BigDecimal costPerToken = costPerMillionTokens.divide(new BigDecimal("1000000"), 10, RoundingMode.HALF_UP);
+
+		// 토큰 계산 상수 (한글 중심 텍스트: 1 토큰 ≈ 3 문자)
+		final double TOKENS_PER_CHAR = 1.0 / 3.0;
+		final int MAX_CHUNK_SIZE = 6000; // 약 2,000 토큰 (안전 마진 포함)
+
+		for (Article article : articles) {
+			try {
+				// 텍스트 준비
+				String text = LawArticleMetadata.buildArticleText(law, article);
+
+				if (text == null || text.trim().isEmpty()) {
+					log.debug("조문 ID {}의 텍스트가 비어있어 건너뜁니다", article.getId());
+					continue;
+				}
+
+				// 텍스트를 청크로 분할
+				List<String> chunks = splitTextIntoChunks(text, MAX_CHUNK_SIZE);
+				int estimatedChunks = chunks.size();
+
+				// 각 청크의 토큰 수 계산
+				long articleTokens = 0;
+				for (String chunk : chunks) {
+					// 문자 수를 토큰 수로 변환 (보수적으로 계산)
+					long chunkTokens = Math.round(chunk.length() * TOKENS_PER_CHAR);
+					articleTokens += chunkTokens;
+				}
+
+				totalTokens += articleTokens;
+				totalChunks += estimatedChunks;
+
+				// 조문별 비용 계산
+				BigDecimal articleCost = costPerToken.multiply(new BigDecimal(articleTokens));
+
+				// 조문 정보 생성
+				TokenEstimateResponse.ArticleTokenInfo articleInfo = TokenEstimateResponse.ArticleTokenInfo.builder()
+						.articleId(article.getId())
+						.articleKey(article.getArticleKey())
+						.articleNumber(article.getKoreanString())
+						.articleTitle(article.getArticleTitle())
+						.textLength(text.length())
+						.estimatedTokens(articleTokens)
+						.estimatedChunks(estimatedChunks)
+						.estimatedCost(articleCost)
+						.build();
+
+				articleDetails.add(articleInfo);
+
+			} catch (Exception e) {
+				log.error("조문 ID {} 토큰 계산 중 오류 발생", article.getId(), e);
+			}
+		}
+
+		// 총 비용 계산
+		BigDecimal totalCost = costPerToken.multiply(new BigDecimal(totalTokens));
+
+		log.info("법령 ID {} (lawId: {}) 토큰 계산 완료: {}개 조문, {}개 청크, {} 토큰, ${}",
+				law.getId(), lawId, articles.size(), totalChunks, totalTokens, totalCost);
+
+		return TokenEstimateResponse.builder()
+				.lawId(lawId)
+				.lawNameKorean(law.getLawNameKorean())
+				.lawKey(law.getLawKey())
+				.embeddingModel(embeddingModel)
+				.costPerMillionTokens(costPerMillionTokens)
+				.totalArticles(articles.size())
+				.totalChunks(totalChunks)
+				.totalTokens(totalTokens)
+				.estimatedCost(totalCost)
+				.articleDetails(articleDetails)
+				.build();
 	}
 }
