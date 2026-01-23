@@ -16,7 +16,7 @@ import lombok.Data;
  */
 @Data
 @Builder
-public class ConsultationMetadata implements DocumentMetadata {
+public class CounselMetadata implements DocumentMetadata {
 
 	public static final String DOCUMENT_TYPE = "counsel";
 
@@ -43,15 +43,15 @@ public class ConsultationMetadata implements DocumentMetadata {
 	 * @param consultation 상담 엔티티
 	 * @return ConsultationMetadata
 	 */
-	public static ConsultationMetadata from(Counsel consultation) {
-		ConsultationMetadataBuilder builder = ConsultationMetadata.builder()
+	public static CounselMetadata from(Counsel consultation) {
+		CounselMetadataBuilder builder = CounselMetadata.builder()
 				.counselId(consultation.getId())
 				.title(consultation.getCounselTitle())
 				.createdAt(consultation.getCounselAt());
 
-		// fieldLarge 처리
+		// fieldLarge 처리 (name만 저장 - 검색에 유용)
 		if (consultation.getCounselFieldLarge() != null) {
-			builder.fieldLarge(consultation.getCounselFieldLarge().toString());
+			builder.fieldLarge(consultation.getCounselFieldLarge().getName());
 		}
 
 		// 연관 법령 조문 정보 처리
@@ -112,8 +112,8 @@ public class ConsultationMetadata implements DocumentMetadata {
 	 * @return ConsultationMetadata
 	 */
 	@SuppressWarnings("unchecked")
-	public static ConsultationMetadata fromMap(Map<String, Object> metadataMap) {
-		ConsultationMetadataBuilder builder = ConsultationMetadata.builder();
+	public static CounselMetadata fromMap(Map<String, Object> metadataMap) {
+		CounselMetadataBuilder builder = CounselMetadata.builder();
 
 		// 기본 정보
 		if (metadataMap.get("counselId") != null) {

@@ -5,6 +5,9 @@ import java.util.List;
 
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,52 +34,82 @@ public class LawArticleEmbeddingService {
 
 	/**
 	 * 모든 lawId별 최신 법령의 조문들을 임베딩하여 Vector Store에 저장
-	 * 배치 처리로 메모리 사용량을 최적화합니다.
+	 * 페이징 처리로 메모리 사용량을 최적화하고, 각 법령 처리 후 즉시 flush합니다.
 	 * 
-	 * @return 처리된 조문 수
+	 * @return 처리된 문서 수 (청크 포함)
 	 */
 	@Transactional(readOnly = true)
 	public int embedAllLatestLawArticles() {
-		log.info("전체 최신 법령 조문 임베딩 시작");
+		log.info("전체 최신 법령 조문 임베딩 시작 (페이징 처리 모드)");
 
-		// 1. 모든 lawId별 최신 법령 조회
-		List<LawBasicInformation> latestLaws = lawBasicInformationRepository.findAllLatestByLawId();
-		log.info("최신 법령 수: {}", latestLaws.size());
+		// 전체 법령 수 조회
+		long totalCount = lawBasicInformationRepository.countAllLatestByLawId();
+		log.info("전체 최신 법령 수: {}", totalCount);
 
-		if (latestLaws.isEmpty()) {
+		if (totalCount == 0) {
 			log.warn("임베딩할 최신 법령이 없습니다");
 			return 0;
 		}
 
+		// 배치 크기 설정 (메모리 사용량 최적화)
+		int batchSize = 20; // 한 번에 처리할 법령 수
 		int totalProcessed = 0;
 		int totalArticles = 0;
+		int page = 0;
 
-		// 2. 각 법령의 조문들을 임베딩
-		for (LawBasicInformation law : latestLaws) {
-			try {
-				// 조문 목록 조회 (삭제되지 않은 조문만)
-				List<Article> articles = law.getArticles();
+		// 페이지네이션을 사용한 배치 처리
+		while (true) {
+			Pageable pageable = PageRequest.of(page, batchSize);
+			Page<LawBasicInformation> pageResult = lawBasicInformationRepository.findAllLatestByLawId(pageable);
 
-				if (articles.isEmpty()) {
-					log.debug("법령 ID {} (lawId: {})에 조문이 없습니다", law.getId(), law.getLawId());
-					continue;
+			if (pageResult.isEmpty()) {
+				break;
+			}
+
+			List<LawBasicInformation> batch = pageResult.getContent();
+			log.info("배치 처리 진행 중: {}/{} ({}%)", 
+					page * batchSize + batch.size(), totalCount,
+					totalCount > 0 ? (int) ((page * batchSize + batch.size()) * 100.0 / totalCount) : 0);
+
+			// 각 법령을 처리하고 즉시 flush
+			for (LawBasicInformation law : batch) {
+				try {
+					// 조문 목록 조회 (삭제되지 않은 조문만)
+					List<Article> articles = articleRepository.findActiveArticlesByLawBasicInformationId(law.getId());
+
+					if (articles.isEmpty()) {
+						log.debug("법령 ID {} (lawId: {})에 조문이 없습니다", law.getId(), law.getLawId());
+						continue;
+					}
+
+					// 조문 임베딩 처리 (각 법령마다 즉시 flush)
+					int processed = embedArticlesForLaw(law, articles);
+					totalProcessed += processed;
+					totalArticles += articles.size();
+
+					log.debug("법령 ID {} (lawId: {}) 처리 완료: {}개 조문, {}개 문서 임베딩", 
+							law.getId(), law.getLawId(), articles.size(), processed);
+
+				} catch (Exception e) {
+					log.error("법령 ID {} (lawId: {}) 처리 중 오류 발생", law.getId(), law.getLawId(), e);
 				}
+			}
 
-				// 조문 임베딩 처리
-				int processed = embedArticlesForLaw(law, articles);
-				totalProcessed += processed;
-				totalArticles += articles.size();
+			// 다음 페이지가 없으면 종료
+			if (!pageResult.hasNext()) {
+				break;
+			}
 
-				log.debug("법령 ID {} (lawId: {}) 처리 완료: {}개 조문 임베딩", 
-						law.getId(), law.getLawId(), processed);
+			page++;
 
-			} catch (Exception e) {
-				log.error("법령 ID {} (lawId: {}) 처리 중 오류 발생", law.getId(), law.getLawId(), e);
+			// 중간 진행 상황 로깅
+			if (page % 10 == 0) {
+				log.info("중간 진행 상황: {}건 처리 완료", page * batchSize);
 			}
 		}
 
 		log.info("전체 최신 법령 조문 임베딩 완료: 총 {}개 법령, {}개 조문, {}개 문서 임베딩", 
-				latestLaws.size(), totalArticles, totalProcessed);
+				totalCount, totalArticles, totalProcessed);
 		return totalProcessed;
 	}
 
@@ -112,17 +145,20 @@ public class LawArticleEmbeddingService {
 
 	/**
 	 * 특정 법령의 조문들을 임베딩하여 Vector Store에 저장
+	 * 각 조문을 처리할 때마다 즉시 flush하여 메모리 사용량을 최적화합니다.
 	 * 
 	 * @param law     법령 기본 정보
 	 * @param articles 조문 목록
 	 * @return 처리된 문서 수 (청크 포함)
 	 */
 	private int embedArticlesForLaw(LawBasicInformation law, List<Article> articles) {
-		List<Document> documents = new ArrayList<>();
+		int totalDocuments = 0;
 		int successCount = 0;
 		int failCount = 0;
 
 		for (Article article : articles) {
+			List<Document> documents = new ArrayList<>();
+			
 			try {
 				// 1. 텍스트 준비
 				String text = LawArticleMetadata.buildArticleText(law, article);
@@ -155,8 +191,18 @@ public class LawArticleEmbeddingService {
 					documents.add(document);
 				}
 
-				successCount++;
-				log.debug("조문 ID {} 임베딩 준비 완료 ({}개 청크)", article.getId(), chunks.size());
+				// 4. 각 조문의 문서를 즉시 Vector Store에 저장 (flush)
+				if (!documents.isEmpty()) {
+					try {
+						vectorStore.add(documents);
+						totalDocuments += documents.size();
+						successCount++;
+						log.debug("조문 ID {} 임베딩 완료 ({}개 청크)", article.getId(), chunks.size());
+					} catch (Exception e) {
+						log.error("조문 ID {} Vector Store 저장 중 오류 발생", article.getId(), e);
+						failCount++;
+					}
+				}
 
 			} catch (Exception e) {
 				log.error("조문 ID {} 임베딩 중 오류 발생", article.getId(), e);
@@ -164,19 +210,10 @@ public class LawArticleEmbeddingService {
 			}
 		}
 
-		// 4. Vector Store에 저장 (배치 단위로 저장하여 메모리 해제)
-		if (!documents.isEmpty()) {
-			try {
-				vectorStore.add(documents);
-				log.debug("법령 ID {} 배치 저장 완료: 성공 {}건, 실패 {}건, 총 문서 {}개", 
-						law.getId(), successCount, failCount, documents.size());
-			} catch (Exception e) {
-				log.error("Vector Store 저장 중 오류 발생", e);
-				throw new RuntimeException("Vector Store 저장 실패", e);
-			}
-		}
+		log.debug("법령 ID {} (lawId: {}) 처리 완료: 성공 {}건, 실패 {}건, 총 문서 {}개", 
+				law.getId(), law.getLawId(), successCount, failCount, totalDocuments);
 
-		return documents.size();
+		return totalDocuments;
 	}
 
 

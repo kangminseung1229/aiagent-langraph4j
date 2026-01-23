@@ -216,33 +216,16 @@ public class ConsultationSearchService {
 	}
 
 	/**
-	 * 메타데이터에서 fieldLarge의 name 값만 추출
-	 * fieldLarge는 "CounselFieldLarge(id=11, name=국제조세, ...)" 형식의 문자열
+	 * 메타데이터에서 fieldLarge의 name 값 추출
+	 * fieldLarge는 name만 저장된 문자열 (예: "국제조세")
 	 */
 	private String extractFieldLargeName(Map<String, Object> metadata, String key) {
 		Object value = metadata.get(key);
 		if (value == null) {
 			return null;
 		}
-
-		String fieldLargeStr = value.toString();
-		// "name=" 다음의 값을 추출 (쉼표나 닫는 괄호 전까지)
-		int nameIndex = fieldLargeStr.indexOf("name=");
-		if (nameIndex == -1) {
-			return null;
-		}
-
-		int startIndex = nameIndex + 5; // "name=" 길이
-		int endIndex = fieldLargeStr.indexOf(",", startIndex);
-		if (endIndex == -1) {
-			endIndex = fieldLargeStr.indexOf(")", startIndex);
-		}
-		if (endIndex == -1) {
-			// 끝까지가 name 값인 경우
-			return fieldLargeStr.substring(startIndex).trim();
-		}
-
-		return fieldLargeStr.substring(startIndex, endIndex).trim();
+		// name만 저장되므로 파싱 없이 그대로 반환
+		return value.toString();
 	}
 
 	/**

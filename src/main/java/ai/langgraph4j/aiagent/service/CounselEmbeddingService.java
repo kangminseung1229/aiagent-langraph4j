@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import ai.langgraph4j.aiagent.entity.counsel.Counsel;
 import ai.langgraph4j.aiagent.entity.law.LawArticleCode;
-import ai.langgraph4j.aiagent.metadata.ConsultationMetadata;
+import ai.langgraph4j.aiagent.metadata.CounselMetadata;
 import ai.langgraph4j.aiagent.repository.CounselRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,7 +27,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ConsultationEmbeddingService {
+public class CounselEmbeddingService {
 
 	private final CounselRepository counselRepository;
 	private final VectorStore vectorStore;
@@ -143,7 +143,7 @@ public class ConsultationEmbeddingService {
 					String chunk = chunks.get(i);
 
 					// 메타데이터 준비
-					ConsultationMetadata metadata = ConsultationMetadata.from(consultation);
+					CounselMetadata metadata = CounselMetadata.from(consultation);
 
 					// 청크 정보 추가
 					if (chunks.size() > 1) {

@@ -4,6 +4,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+
 import com.querydsl.core.types.dsl.Expressions;
 import com.querydsl.jpa.JPQLQuery;
 import com.querydsl.jpa.impl.JPAQueryFactory;
@@ -56,6 +60,46 @@ public class LawBasicInformationRepositoryExtensionImpl implements LawBasicInfor
 				.selectFrom(lawBasicInformation)
 				.where(lawBasicInformation.enforceDate.eq(Expressions.stringTemplate("({0})", maxEnforceDateSubquery)))
 				.fetch();
+	}
+
+	@Override
+	public Page<LawBasicInformation> findAllLatestByLawId(Pageable pageable) {
+		// 상관 서브쿼리: 각 lawId별 최대 enforceDate 찾기
+		JPQLQuery<String> maxEnforceDateSubquery = jpaQueryFactory
+				.select(lawSub.enforceDate.max())
+				.from(lawSub)
+				.where(lawSub.lawId.eq(lawBasicInformation.lawId));
+
+		// 메인 쿼리: 각 lawId별로 enforceDate가 최대값인 법령 조회
+		JPQLQuery<LawBasicInformation> query = jpaQueryFactory
+				.selectFrom(lawBasicInformation)
+				.where(lawBasicInformation.enforceDate.eq(Expressions.stringTemplate("({0})", maxEnforceDateSubquery)));
+
+		// 페이징 적용
+		List<LawBasicInformation> content = query
+				.offset(pageable.getOffset())
+				.limit(pageable.getPageSize())
+				.fetch();
+
+		// 총 개수 조회
+		long total = countAllLatestByLawId();
+
+		return new PageImpl<>(content, pageable, total);
+	}
+
+	@Override
+	public long countAllLatestByLawId() {
+		// 상관 서브쿼리: 각 lawId별 최대 enforceDate 찾기
+		JPQLQuery<String> maxEnforceDateSubquery = jpaQueryFactory
+				.select(lawSub.enforceDate.max())
+				.from(lawSub)
+				.where(lawSub.lawId.eq(lawBasicInformation.lawId));
+
+		// 메인 쿼리: 각 lawId별로 enforceDate가 최대값인 법령 개수 조회
+		return jpaQueryFactory
+				.selectFrom(lawBasicInformation)
+				.where(lawBasicInformation.enforceDate.eq(Expressions.stringTemplate("({0})", maxEnforceDateSubquery)))
+				.fetchCount();
 	}
 
 	@Override
