@@ -116,11 +116,11 @@ public class ConsultationSearchService {
 				Map<String, Object> meta = doc.getMetadata();
 				Double score = doc.getScore();
 				String content = doc.getText();
-				Long consultationId = extractLong(meta, "consultationId");
+				Long counselId = extractLong(meta, "counselId");
 				String title = extractString(meta, "title");
 
-				log.info("검색 결과 [{}] - consultationId: {}, title: {}, score: {}, content: {}...",
-						i + 1, consultationId, title, score,
+				log.info("검색 결과 [{}] - counselId: {}, title: {}, score: {}, content: {}...",
+						i + 1, counselId, title, score,
 						content != null && content.length() > 100 ? content.substring(0, 100) : content);
 
 				// 검색 쿼리와 결과의 관련성 체크 (간단한 키워드 매칭)
@@ -158,7 +158,7 @@ public class ConsultationSearchService {
 		Map<String, Object> metadata = document.getMetadata();
 
 		// 메타데이터에서 정보 추출
-		Long consultationId = extractLong(metadata, "consultationId");
+		Long counselId = extractLong(metadata, "counselId");
 		String title = extractString(metadata, "title");
 		String fieldLarge = extractFieldLargeName(metadata, "fieldLarge");
 		String createdAt = extractString(metadata, "createdAt");
@@ -169,7 +169,7 @@ public class ConsultationSearchService {
 		Double similarityScore = document.getScore();
 
 		return SearchResult.builder()
-				.consultationId(consultationId)
+				.counselId(counselId)
 				.title(title)
 				.content(document.getText()) // 청크 내용 (getText() 또는 getContent() 사용)
 				.fieldLarge(fieldLarge)

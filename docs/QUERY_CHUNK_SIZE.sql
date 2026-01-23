@@ -10,7 +10,7 @@ SELECT
     LEFT(content, 100) as content_preview,
     LENGTH(content) as chunk_size,
     metadata,
-    metadata->>'consultationId' as consultation_id,
+    metadata->>'counselId' as consultation_id,
     metadata->>'title' as title,
     metadata->>'chunkIndex' as chunk_index,
     metadata->>'totalChunks' as total_chunks
@@ -22,7 +22,7 @@ SELECT
     id,
     LEFT(content, 100) as content_preview,
     LENGTH(content) as chunk_size,
-    metadata->>'consultationId' as consultation_id,
+    metadata->>'counselId' as consultation_id,
     metadata->>'title' as title,
     metadata->>'chunkIndex' as chunk_index,
     metadata->>'totalChunks' as total_chunks
@@ -35,7 +35,7 @@ SELECT
     id,
     LEFT(content, 100) as content_preview,
     LENGTH(content) as chunk_size,
-    metadata->>'consultationId' as consultation_id,
+    metadata->>'counselId' as consultation_id,
     metadata->>'title' as title,
     metadata->>'chunkIndex' as chunk_index,
     metadata->>'totalChunks' as total_chunks
@@ -62,7 +62,7 @@ SELECT
     metadata->>'chunkIndex' as chunk_index,
     metadata->>'totalChunks' as total_chunks
 FROM spring_ai_vector_store
-WHERE metadata->>'consultationId' = '37285'
+WHERE metadata->>'counselId' = '37285'
 ORDER BY LENGTH(content) DESC;
 
 -- 6. 메타데이터에 chunkSize가 저장되어 있는 경우 (JSON 필드 사용)
@@ -71,7 +71,7 @@ SELECT
     id,
     LEFT(content, 100) as content_preview,
     (metadata->>'chunkSize')::INTEGER as chunk_size,
-    metadata->>'consultationId' as consultation_id,
+    metadata->>'counselId' as consultation_id,
     metadata->>'title' as title
 FROM spring_ai_vector_store
 WHERE metadata->>'chunkSize' IS NOT NULL

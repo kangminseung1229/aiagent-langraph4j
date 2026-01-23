@@ -17,7 +17,7 @@ public class SearchResult {
 	/**
 	 * 상담 ID
 	 */
-	private Long consultationId;
+	private Long counselId;
 
 	/**
 	 * 상담 제목

@@ -41,17 +41,17 @@ public class EmbeddingController {
 	/**
 	 * 특정 상담 ID 임베딩
 	 * 
-	 * @param consultationId 상담 ID
+	 * @param counselId 상담 ID
 	 * @return 응답
 	 */
-	@PostMapping("/{consultationId}")
-	public ResponseEntity<EmbeddingResponse> embedOne(@PathVariable Long consultationId) {
-		log.info("상담 ID {} 임베딩 요청", consultationId);
+	@PostMapping("/{counselId}")
+	public ResponseEntity<EmbeddingResponse> embedOne(@PathVariable Long counselId) {
+		log.info("상담 ID {} 임베딩 요청", counselId);
 
-		embeddingService.embedConsultation(consultationId);
+		embeddingService.embedConsultation(counselId);
 
 		return ResponseEntity.ok(new EmbeddingResponse(
-				"상담 ID " + consultationId + " 임베딩 완료",
+				"상담 ID " + counselId + " 임베딩 완료",
 				1));
 	}
 

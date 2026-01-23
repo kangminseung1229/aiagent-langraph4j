@@ -113,8 +113,8 @@ public class SearchTool {
 				sb.append("     유사도: ").append(String.format("%.2f", result.getSimilarityScore())).append("\n");
 			}
 
-			if (result.getConsultationId() != null) {
-				sb.append("     상담ID: ").append(result.getConsultationId()).append("\n");
+			if (result.getcounselId() != null) {
+				sb.append("     상담ID: ").append(result.getcounselId()).append("\n");
 			}
 
 			sb.append("\n");

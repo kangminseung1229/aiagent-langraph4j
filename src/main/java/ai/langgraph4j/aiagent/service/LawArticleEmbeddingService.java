@@ -1,0 +1,272 @@
+package ai.langgraph4j.aiagent.service;
+
+import java.util.ArrayList;
+import java.util.List;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import ai.langgraph4j.aiagent.entity.law.Article;
+import ai.langgraph4j.aiagent.entity.law.LawBasicInformation;
+import ai.langgraph4j.aiagent.metadata.LawArticleMetadata;
+import ai.langgraph4j.aiagent.repository.ArticleRepository;
+import ai.langgraph4j.aiagent.repository.LawBasicInformationRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
+/**
+ * 법령 조문 임베딩 서비스
+ * lawId별 최신 enforceDate의 법령 조문들을 임베딩하여 Vector Store에 저장합니다.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class LawArticleEmbeddingService {
+
+	private final LawBasicInformationRepository lawBasicInformationRepository;
+	private final ArticleRepository articleRepository;
+	private final VectorStore vectorStore;
+
+	/**
+	 * 모든 lawId별 최신 법령의 조문들을 임베딩하여 Vector Store에 저장
+	 * 배치 처리로 메모리 사용량을 최적화합니다.
+	 * 
+	 * @return 처리된 조문 수
+	 */
+	@Transactional(readOnly = true)
+	public int embedAllLatestLawArticles() {
+		log.info("전체 최신 법령 조문 임베딩 시작");
+
+		// 1. 모든 lawId별 최신 법령 조회
+		List<LawBasicInformation> latestLaws = lawBasicInformationRepository.findAllLatestByLawId();
+		log.info("최신 법령 수: {}", latestLaws.size());
+
+		if (latestLaws.isEmpty()) {
+			log.warn("임베딩할 최신 법령이 없습니다");
+			return 0;
+		}
+
+		int totalProcessed = 0;
+		int totalArticles = 0;
+
+		// 2. 각 법령의 조문들을 임베딩
+		for (LawBasicInformation law : latestLaws) {
+			try {
+				// 조문 목록 조회 (삭제되지 않은 조문만)
+				List<Article> articles = law.getArticles();
+
+				if (articles.isEmpty()) {
+					log.debug("법령 ID {} (lawId: {})에 조문이 없습니다", law.getId(), law.getLawId());
+					continue;
+				}
+
+				// 조문 임베딩 처리
+				int processed = embedArticlesForLaw(law, articles);
+				totalProcessed += processed;
+				totalArticles += articles.size();
+
+				log.debug("법령 ID {} (lawId: {}) 처리 완료: {}개 조문 임베딩", 
+						law.getId(), law.getLawId(), processed);
+
+			} catch (Exception e) {
+				log.error("법령 ID {} (lawId: {}) 처리 중 오류 발생", law.getId(), law.getLawId(), e);
+			}
+		}
+
+		log.info("전체 최신 법령 조문 임베딩 완료: 총 {}개 법령, {}개 조문, {}개 문서 임베딩", 
+				latestLaws.size(), totalArticles, totalProcessed);
+		return totalProcessed;
+	}
+
+	/**
+	 * 특정 lawId의 최신 법령 조문들을 임베딩하여 Vector Store에 저장
+	 * 
+	 * @param lawId 법령ID
+	 * @return 처리된 조문 수
+	 */
+	@Transactional(readOnly = true)
+	public int embedLatestLawArticlesByLawId(String lawId) {
+		log.info("법령 ID {}의 최신 조문 임베딩 시작", lawId);
+
+		// 1. lawId별 최신 법령 조회
+		LawBasicInformation law = lawBasicInformationRepository.findLatestByLawId(lawId)
+				.orElseThrow(() -> new IllegalArgumentException("법령을 찾을 수 없습니다: " + lawId));
+
+		// 2. 조문 목록 조회 (삭제되지 않은 조문만)
+		List<Article> articles = articleRepository.findActiveArticlesByLawBasicInformationId(law.getId());
+
+		if (articles.isEmpty()) {
+			log.warn("법령 ID {} (lawId: {})에 조문이 없습니다", law.getId(), lawId);
+			return 0;
+		}
+
+		// 3. 조문 임베딩 처리
+		int processed = embedArticlesForLaw(law, articles);
+
+		log.info("법령 ID {} (lawId: {}) 임베딩 완료: {}개 조문, {}개 문서 임베딩", 
+				law.getId(), lawId, articles.size(), processed);
+		return processed;
+	}
+
+	/**
+	 * 특정 법령의 조문들을 임베딩하여 Vector Store에 저장
+	 * 
+	 * @param law     법령 기본 정보
+	 * @param articles 조문 목록
+	 * @return 처리된 문서 수 (청크 포함)
+	 */
+	private int embedArticlesForLaw(LawBasicInformation law, List<Article> articles) {
+		List<Document> documents = new ArrayList<>();
+		int successCount = 0;
+		int failCount = 0;
+
+		for (Article article : articles) {
+			try {
+				// 1. 텍스트 준비
+				String text = LawArticleMetadata.buildArticleText(law, article);
+
+				if (text == null || text.trim().isEmpty()) {
+					log.warn("조문 ID {}의 텍스트가 비어있어 건너뜁니다", article.getId());
+					failCount++;
+					continue;
+				}
+
+				// 2. 텍스트를 청크로 분할 (최대 토큰 수 제한: 2,048 토큰)
+				// 대략적으로 1 토큰 = 4 문자로 계산, 안전하게 1,500 토큰 = 약 6,000 문자로 청크 분할
+				List<String> chunks = splitTextIntoChunks(text, 6000);
+
+				// 3. 각 청크를 Document로 생성
+				for (int i = 0; i < chunks.size(); i++) {
+					String chunk = chunks.get(i);
+
+					// 메타데이터 준비
+					LawArticleMetadata metadata = LawArticleMetadata.from(law, article);
+
+					// 청크 정보 추가
+					if (chunks.size() > 1) {
+						metadata.setChunkIndex(i);
+						metadata.setTotalChunks(chunks.size());
+					}
+
+					// Document 생성 (toMap()으로 변환)
+					Document document = new Document(chunk, metadata.toMap());
+					documents.add(document);
+				}
+
+				successCount++;
+				log.debug("조문 ID {} 임베딩 준비 완료 ({}개 청크)", article.getId(), chunks.size());
+
+			} catch (Exception e) {
+				log.error("조문 ID {} 임베딩 중 오류 발생", article.getId(), e);
+				failCount++;
+			}
+		}
+
+		// 4. Vector Store에 저장 (배치 단위로 저장하여 메모리 해제)
+		if (!documents.isEmpty()) {
+			try {
+				vectorStore.add(documents);
+				log.debug("법령 ID {} 배치 저장 완료: 성공 {}건, 실패 {}건, 총 문서 {}개", 
+						law.getId(), successCount, failCount, documents.size());
+			} catch (Exception e) {
+				log.error("Vector Store 저장 중 오류 발생", e);
+				throw new RuntimeException("Vector Store 저장 실패", e);
+			}
+		}
+
+		return documents.size();
+	}
+
+
+	/**
+	 * 텍스트를 청크로 분할
+	 * text-embedding-004 모델은 최대 2,048 토큰까지만 지원하므로
+	 * 긴 텍스트를 적절한 크기로 나눕니다.
+	 * 
+	 * @param text         원본 텍스트
+	 * @param maxChunkSize 최대 청크 크기 (문자 수, 약 1,500 토큰에 해당)
+	 * @return 분할된 텍스트 청크 리스트
+	 */
+	private List<String> splitTextIntoChunks(String text, int maxChunkSize) {
+		List<String> chunks = new ArrayList<>();
+
+		if (text.length() <= maxChunkSize) {
+			// 텍스트가 최대 크기보다 작으면 그대로 반환
+			chunks.add(text);
+			return chunks;
+		}
+
+		// 텍스트를 문장 단위로 분할하여 의미 있는 경계에서 나눔
+		String[] sentences = text.split("(?<=[.!?。！？])\\s+");
+		StringBuilder currentChunk = new StringBuilder();
+
+		for (String sentence : sentences) {
+			// 현재 청크에 문장을 추가했을 때 최대 크기를 초과하는지 확인
+			if (currentChunk.length() + sentence.length() + 1 > maxChunkSize && currentChunk.length() > 0) {
+				// 현재 청크를 저장하고 새 청크 시작
+				chunks.add(currentChunk.toString().trim());
+				currentChunk = new StringBuilder();
+			}
+
+			if (currentChunk.length() > 0) {
+				currentChunk.append(" ");
+			}
+			currentChunk.append(sentence);
+		}
+
+		// 마지막 청크 추가
+		if (currentChunk.length() > 0) {
+			chunks.add(currentChunk.toString().trim());
+		}
+
+		// 문장 단위 분할이 실패한 경우 (문장 구분자가 없는 경우) 문자 단위로 분할
+		if (chunks.isEmpty()) {
+			for (int i = 0; i < text.length(); i += maxChunkSize) {
+				int end = Math.min(i + maxChunkSize, text.length());
+				chunks.add(text.substring(i, end));
+			}
+		}
+
+		return chunks;
+	}
+
+	/**
+	 * 특정 법령의 조문 임베딩을 삭제하고 재임베딩
+	 * 
+	 * @param lawId 법령ID
+	 */
+	@Transactional
+	public void reembedLawArticlesByLawId(String lawId) {
+		log.info("법령 ID {} 재임베딩 시작", lawId);
+
+		// 1. 기존 임베딩 삭제 (메타데이터로 필터링)
+		deleteEmbeddingsByLawId(lawId);
+
+		// 2. 재임베딩
+		embedLatestLawArticlesByLawId(lawId);
+
+		log.info("법령 ID {} 재임베딩 완료", lawId);
+	}
+
+	/**
+	 * 특정 lawId의 모든 조문 임베딩을 삭제
+	 * PgVectorStore의 경우 메타데이터로 필터링하여 삭제합니다.
+	 * 
+	 * @param lawId 법령ID
+	 */
+	@Transactional
+	public void deleteEmbeddingsByLawId(String lawId) {
+		log.info("법령 ID {}의 임베딩 삭제 시작", lawId);
+
+		// Spring AI VectorStore는 직접적인 삭제 메서드를 제공하지 않으므로
+		// PgVectorStore의 경우 SQL을 직접 실행해야 합니다.
+		log.warn("법령 ID {}의 임베딩 삭제는 SQL로 직접 실행 필요: " +
+				"DELETE FROM spring_ai_vector_store WHERE metadata->>'lawId' = '{}' AND metadata->>'documentType' = 'lawArticle'",
+				lawId, lawId);
+
+		// TODO: JdbcTemplate을 주입받아서 SQL 실행하도록 구현
+		// 또는 VectorStore 확장하여 deleteByMetadata 메서드 추가
+	}
+}

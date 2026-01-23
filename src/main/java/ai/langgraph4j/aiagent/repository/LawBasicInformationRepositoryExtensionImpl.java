@@ -1,0 +1,66 @@
+package ai.langgraph4j.aiagent.repository;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+import com.querydsl.core.types.dsl.Expressions;
+import com.querydsl.jpa.JPQLQuery;
+import com.querydsl.jpa.impl.JPAQueryFactory;
+
+import ai.langgraph4j.aiagent.entity.law.LawBasicInformation;
+import ai.langgraph4j.aiagent.entity.law.QLawBasicInformation;
+import lombok.RequiredArgsConstructor;
+
+/**
+ * LawBasicInformationRepository의 QueryDSL Extension 구현체
+ */
+@RequiredArgsConstructor
+public class LawBasicInformationRepositoryExtensionImpl implements LawBasicInformationRepositoryExtension {
+
+	private final JPAQueryFactory jpaQueryFactory;
+
+	private QLawBasicInformation lawBasicInformation = QLawBasicInformation.lawBasicInformation;
+	private QLawBasicInformation lawSub = new QLawBasicInformation("lawSub");
+
+	@Override
+	public Optional<LawBasicInformation> findLatestByLawId(String lawId) {
+
+		// 서브쿼리: 해당 lawId의 최대 enforceDate 찾기
+		JPQLQuery<String> maxEnforceDateSubquery = jpaQueryFactory
+				.select(lawSub.enforceDate.max())
+				.from(lawSub)
+				.where(lawSub.lawId.eq(lawId));
+
+		// 메인 쿼리: lawId가 일치하고 enforceDate가 최대값인 법령 조회
+		LawBasicInformation result = jpaQueryFactory
+				.selectFrom(lawBasicInformation)
+				.where(lawBasicInformation.lawId.eq(lawId)
+						.and(lawBasicInformation.enforceDate.eq(Expressions.stringTemplate("({0})", maxEnforceDateSubquery))))
+				.fetchFirst();
+
+		return Optional.ofNullable(result);
+	}
+
+	@Override
+	public List<LawBasicInformation> findAllLatestByLawId() {
+		// 상관 서브쿼리: 각 lawId별 최대 enforceDate 찾기
+		// 외부 쿼리의 lawId와 매칭하여 해당 lawId의 최대 enforceDate를 찾음
+		JPQLQuery<String> maxEnforceDateSubquery = jpaQueryFactory
+				.select(lawSub.enforceDate.max())
+				.from(lawSub)
+				.where(lawSub.lawId.eq(lawBasicInformation.lawId));
+
+		// 메인 쿼리: 각 lawId별로 enforceDate가 최대값인 법령 조회
+		return jpaQueryFactory
+				.selectFrom(lawBasicInformation)
+				.where(lawBasicInformation.enforceDate.eq(Expressions.stringTemplate("({0})", maxEnforceDateSubquery)))
+				.fetch();
+	}
+
+	@Override
+	public Set<String> findLawIdGroup() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+}

@@ -18,22 +18,26 @@
 ## 🛠️ 기술 스택
 
 ### 핵심 프레임워크
+
 - **Spring Boot 3.5.1**: 애플리케이션 프레임워크
 - **Spring AI 1.1.1**: AI 모델 통합 및 벡터 스토어
 - **LangGraph4j 1.7.5**: 에이전트 워크플로우 관리
 - **LangChain4j 0.34.0**: LLM 통합 라이브러리
 
 ### AI 모델
-- **Google Gemini API**: 
+
+- **Google Gemini API**:
   - Chat Model: `gemini-3-flash-preview` (기본값)
   - Embedding Model: `text-embedding-004`
   - Thinking Level: HIGH (Gemini 3 모델 지원)
 
 ### 데이터베이스
+
 - **PostgreSQL**: 관계형 데이터베이스
 - **pgvector**: 벡터 임베딩 저장 및 유사도 검색
 
 ### 기타 라이브러리
+
 - **EvalEx 3.6.0**: 수학 표현식 평가 (계산기 도구)
 - **JSoup 1.17.2**: HTML 파싱 및 정리
 - **Lombok**: 보일러플레이트 코드 제거
@@ -132,26 +136,31 @@ src/main/java/ai/langgraph4j/aiagent/
 ## 🎯 주요 기능
 
 ### 1. AI 에이전트 실행
+
 - 사용자 메시지를 받아 에이전트 그래프 실행
 - 세션 기반 대화 컨텍스트 유지
 - System Instruction 지원
 
 ### 2. 도구 자동 호출
+
 - **계산기 도구**: 수학 계산 수행
 - **날씨 도구**: 날씨 정보 조회
 - **검색 도구**: 벡터 기반 상담 데이터 검색 (RAG)
 
 ### 3. 벡터 검색 (RAG)
+
 - 상담 데이터를 벡터 임베딩으로 변환
 - 유사도 기반 검색으로 관련 상담 사례 찾기
 - 검색 결과를 LLM 컨텍스트로 활용
 
 ### 4. 스트리밍 응답
+
 - SSE(Server-Sent Events)를 통한 실시간 응답 스트리밍
 - 중간 단계별 진행 상황 전송
 - 웹 UI를 통한 스트리밍 테스트 지원
 
 ### 5. 임베딩 관리
+
 - 상담 데이터 일괄 임베딩 생성
 - 청크 단위로 분할하여 임베딩
 - 벡터 스토어에 저장 및 인덱싱
@@ -163,6 +172,7 @@ src/main/java/ai/langgraph4j/aiagent/
 ### 에이전트 API
 
 #### 1. 에이전트 실행 (POST)
+
 ```
 POST /api/test/agent/invoke
 Content-Type: application/json
@@ -175,6 +185,7 @@ Content-Type: application/json
 ```
 
 #### 2. 에이전트 스트리밍 (POST)
+
 ```
 POST /api/test/agent/stream
 Content-Type: application/json
@@ -187,6 +198,7 @@ Content-Type: application/json
 ```
 
 #### 3. 간단한 테스트 (GET)
+
 ```
 GET /api/test/agent/test?message={메시지}
 ```
@@ -194,6 +206,7 @@ GET /api/test/agent/test?message={메시지}
 ### Gemini 텍스트 생성 API
 
 #### 1. 텍스트 생성 (POST)
+
 ```
 POST /api/gemini/generate
 Content-Type: application/json
@@ -206,6 +219,7 @@ Content-Type: application/json
 ```
 
 #### 2. 스트리밍 (POST)
+
 ```
 POST /api/gemini/streaming-sse
 Content-Type: application/json
@@ -220,6 +234,7 @@ Content-Type: application/json
 ### 벡터 검색 API
 
 #### 1. 벡터 검색 (POST)
+
 ```
 POST /api/search/vector
 Content-Type: application/json
@@ -234,12 +249,13 @@ Content-Type: application/json
 ### 임베딩 API
 
 #### 1. 임베딩 생성 (POST)
+
 ```
 POST /api/embedding/generate
 Content-Type: application/json
 
 {
-  "consultationIds": [1, 2, 3]
+  "counselIds": [1, 2, 3]
 }
 ```
 
@@ -284,11 +300,13 @@ agent.max-iterations=5
 ## 🚀 실행 방법
 
 ### 1. 사전 요구사항
+
 - Java 17 이상
 - PostgreSQL 12 이상 (pgvector 확장 필요)
 - Google Gemini API 키
 
 ### 2. 데이터베이스 설정
+
 ```sql
 -- PostgreSQL에서 pgvector 확장 설치
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -297,6 +315,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
 ### 3. 애플리케이션 실행
+
 ```bash
 # Gradle로 실행
 ./gradlew bootRun
@@ -305,6 +324,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
 ### 4. API 테스트
+
 ```bash
 # 간단한 테스트
 curl "http://localhost:8080/api/test/agent/test?message=안녕하세요"
@@ -323,6 +343,7 @@ curl -X POST http://localhost:8080/api/test/agent/invoke \
 ## 📊 데이터 모델
 
 ### Counsel (상담) 엔티티
+
 - 상담 제목, 내용, 답변
 - 상담 분야 (대/중/소분류)
 - 상담위원 정보
@@ -330,9 +351,10 @@ curl -X POST http://localhost:8080/api/test/agent/invoke \
 - 생성일시, 수정일시
 
 ### 벡터 스토어 구조
+
 - **Document**: 상담 데이터 청크
-- **Metadata**: 
-  - `consultationId`: 상담 ID
+- **Metadata**:
+  - `counselId`: 상담 ID
   - `title`: 상담 제목
   - `fieldLarge`: 대분류
   - `chunkIndex`: 청크 인덱스
@@ -344,26 +366,31 @@ curl -X POST http://localhost:8080/api/test/agent/invoke \
 ## 🔧 개발 단계 (Phase)
 
 ### Phase 0: 기본 설정 ✅
+
 - Spring Boot 프로젝트 초기화
 - Spring AI 통합
 - 기본 API 엔드포인트
 
 ### Phase 1: LangGraph4j 통합 ✅
+
 - 에이전트 그래프 구조 설계
 - 기본 노드 구현
 - 상태 관리 시스템
 
 ### Phase 2: 도구 구현 ✅
+
 - 계산기, 날씨, 검색 도구 구현
 - Spring AI Tool 자동 호출 통합
 
 ### Phase 3: RAG 패턴 구현 ✅
+
 - 벡터 스토어 설정
 - 임베딩 생성 서비스
 - 벡터 검색 서비스
 - 검색 도구 통합
 
 ### Phase 4: 스트리밍 지원 ✅
+
 - SSE 기반 스트리밍 구현
 - 웹 UI 추가
 - 실시간 응답 전송

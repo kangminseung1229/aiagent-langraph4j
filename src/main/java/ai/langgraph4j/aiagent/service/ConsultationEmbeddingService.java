@@ -1,9 +1,7 @@
 package ai.langgraph4j.aiagent.service;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
@@ -17,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import ai.langgraph4j.aiagent.entity.counsel.Counsel;
 import ai.langgraph4j.aiagent.entity.law.LawArticleCode;
+import ai.langgraph4j.aiagent.metadata.ConsultationMetadata;
 import ai.langgraph4j.aiagent.repository.CounselRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,14 +95,14 @@ public class ConsultationEmbeddingService {
 	 * /**
 	 * 특정 상담 ID의 데이터를 임베딩하여 Vector Store에 저장
 	 * 
-	 * @param consultationId 상담 ID
+	 * @param counselId 상담 ID
 	 */
 	@Transactional
-	public void embedConsultation(Long consultationId) {
-		log.info("상담 ID {} 임베딩 시작", consultationId);
+	public void embedConsultation(Long counselId) {
+		log.info("상담 ID {} 임베딩 시작", counselId);
 
-		Counsel consultation = counselRepository.findById(consultationId)
-				.orElseThrow(() -> new IllegalArgumentException("상담을 찾을 수 없습니다: " + consultationId));
+		Counsel consultation = counselRepository.findById(counselId)
+				.orElseThrow(() -> new IllegalArgumentException("상담을 찾을 수 없습니다: " + counselId));
 
 		embedConsultations(List.of(consultation));
 	}
@@ -144,16 +143,16 @@ public class ConsultationEmbeddingService {
 					String chunk = chunks.get(i);
 
 					// 메타데이터 준비
-					Map<String, Object> metadata = buildMetadata(consultation);
+					ConsultationMetadata metadata = ConsultationMetadata.from(consultation);
 
 					// 청크 정보 추가
 					if (chunks.size() > 1) {
-						metadata.put("chunkIndex", i);
-						metadata.put("totalChunks", chunks.size());
+						metadata.setChunkIndex(i);
+						metadata.setTotalChunks(chunks.size());
 					}
 
-					// Document 생성
-					Document document = new Document(chunk, metadata);
+					// Document 생성 (toMap()으로 변환)
+					Document document = new Document(chunk, metadata.toMap());
 					documents.add(document);
 				}
 
@@ -272,46 +271,6 @@ public class ConsultationEmbeddingService {
 	}
 
 	/**
-	 * 상담 데이터로부터 메타데이터 생성
-	 * 
-	 * @param consultation 상담 데이터
-	 * @return 메타데이터
-	 */
-	private Map<String, Object> buildMetadata(Counsel consultation) {
-		Map<String, Object> metadata = new HashMap<>();
-
-		metadata.put("consultationId", consultation.getId());
-
-		if (consultation.getCounselTitle() != null) {
-			metadata.put("title", consultation.getCounselTitle());
-		}
-
-		if (consultation.getCounselFieldLarge() != null) {
-			metadata.put("fieldLarge", consultation.getCounselFieldLarge().toString());
-		}
-
-		if (consultation.getCounselAt() != null) {
-			metadata.put("createdAt", consultation.getCounselAt().toString());
-		}
-
-		// 연관 법령 조문 정보 추가
-		if (consultation.getLawArticleCodes() != null && !consultation.getLawArticleCodes().isEmpty()) {
-			List<String> lawArticleKeys = consultation.getLawArticleCodes().stream()
-					.map(LawArticleCode::getArticleKey)
-					.toList();
-			metadata.put("lawArticleKeys", lawArticleKeys);
-			
-			// 한국어 형식으로도 저장 (검색 시 활용)
-			List<String> lawArticleFormats = consultation.getLawArticleCodes().stream()
-					.map(lawCode -> LawArticleCode.convertToKoreanFormat(lawCode.getArticleKey()))
-					.toList();
-			metadata.put("lawArticles", lawArticleFormats);
-		}
-
-		return metadata;
-	}
-
-	/**
 	 * 텍스트를 청크로 분할
 	 * text-embedding-004 모델은 최대 2,048 토큰까지만 지원하므로
 	 * 긴 텍스트를 적절한 크기로 나눕니다.
@@ -367,44 +326,44 @@ public class ConsultationEmbeddingService {
 	 * 특정 상담의 임베딩을 삭제하고 재임베딩
 	 * lawArticleCodes를 추가한 후 기존 임베딩을 업데이트할 때 사용합니다.
 	 * 
-	 * @param consultationId 상담 ID
+	 * @param counselId 상담 ID
 	 */
 	@Transactional
-	public void reembedConsultation(Long consultationId) {
-		log.info("상담 ID {} 재임베딩 시작", consultationId);
-		
+	public void reembedConsultation(Long counselId) {
+		log.info("상담 ID {} 재임베딩 시작", counselId);
+
 		// 1. 기존 임베딩 삭제 (메타데이터로 필터링)
-		deleteEmbeddingsByConsultationId(consultationId);
-		
+		deleteEmbeddingsBycounselId(counselId);
+
 		// 2. 재임베딩
-		embedConsultation(consultationId);
-		
-		log.info("상담 ID {} 재임베딩 완료", consultationId);
+		embedConsultation(counselId);
+
+		log.info("상담 ID {} 재임베딩 완료", counselId);
 	}
 
 	/**
 	 * 특정 상담 ID의 모든 임베딩을 삭제
 	 * PgVectorStore의 경우 메타데이터로 필터링하여 삭제합니다.
 	 * 
-	 * @param consultationId 상담 ID
+	 * @param counselId 상담 ID
 	 */
 	@Transactional
-	public void deleteEmbeddingsByConsultationId(Long consultationId) {
-		log.info("상담 ID {}의 임베딩 삭제 시작", consultationId);
-		
+	public void deleteEmbeddingsBycounselId(Long counselId) {
+		log.info("상담 ID {}의 임베딩 삭제 시작", counselId);
+
 		// Spring AI VectorStore는 직접적인 삭제 메서드를 제공하지 않으므로
 		// PgVectorStore의 경우 SQL을 직접 실행해야 합니다.
 		// 하지만 일반적으로는 VectorStore 구현체에 따라 다릅니다.
-		
+
 		// 방법 1: VectorStore에 delete 메서드가 있는 경우
-		// vectorStore.delete(List.of(consultationId.toString()));
-		
+		// vectorStore.delete(List.of(counselId.toString()));
+
 		// 방법 2: SQL 직접 실행 (PgVectorStore의 경우)
 		// JdbcTemplate을 주입받아서 사용하거나, 별도 서비스에서 처리
 		log.warn("상담 ID {}의 임베딩 삭제는 SQL로 직접 실행 필요: " +
-				"DELETE FROM spring_ai_vector_store WHERE metadata->>'consultationId' = '{}'",
-				consultationId, consultationId);
-		
+				"DELETE FROM spring_ai_vector_store WHERE metadata->>'counselId' = '{}'",
+				counselId, counselId);
+
 		// TODO: JdbcTemplate을 주입받아서 SQL 실행하도록 구현
 		// 또는 VectorStore 확장하여 deleteByMetadata 메서드 추가
 	}
@@ -418,10 +377,10 @@ public class ConsultationEmbeddingService {
 	@Transactional
 	public int reembedAllConsultations() {
 		log.warn("전체 상담 데이터 재임베딩 시작 (기존 임베딩 삭제 후 재생성)");
-		
+
 		// 1. 기존 임베딩 전체 삭제
 		deleteAllEmbeddings();
-		
+
 		// 2. 전체 재임베딩
 		return embedAllConsultations();
 	}
