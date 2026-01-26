@@ -47,19 +47,45 @@ public class AiConfig {
 	public Client googleGenAiClient() {
 		// 환경변수나 시스템 프로퍼티에서 직접 읽기 시도
 		String key = apiKey;
+		String keySource = "application.properties (spring.ai.google.genai.api-key)";
 		if (key == null || key.isEmpty() || key.trim().isEmpty()) {
 			key = System.getProperty("spring.ai.google.genai.api-key");
+			keySource = "System Property (spring.ai.google.genai.api-key)";
 		}
 		if (key == null || key.isEmpty() || key.trim().isEmpty()) {
 			key = System.getenv("GEMINI_API_KEY");
+			keySource = "Environment Variable (GEMINI_API_KEY)";
 		}
 		if (key == null || key.isEmpty() || key.trim().isEmpty()) {
 			throw new IllegalStateException(
 					"Google GenAI API key is not configured. Please set spring.ai.google.genai.api-key or GEMINI_API_KEY environment variable.");
 		}
+		
+		// API 키 로그 (보안을 위해 일부만 표시)
+		String maskedKey = maskApiKey(key);
+		log.info("=== Google GenAI API Key 설정 ===");
+		log.info("API Key 소스: {}", keySource);
+		log.info("API Key (마스킹): {}", maskedKey);
+		log.info("API Key 길이: {} 문자", key.length());
+		log.info("================================");
+		
 		return Client.builder()
 				.apiKey(key)
 				.build();
+	}
+	
+	/**
+	 * API 키를 마스킹하여 로그에 안전하게 출력
+	 * 앞 8자리와 뒤 4자리만 표시하고 나머지는 *로 처리
+	 */
+	private String maskApiKey(String apiKey) {
+		if (apiKey == null || apiKey.length() <= 12) {
+			return "***";
+		}
+		String prefix = apiKey.substring(0, 8);
+		String suffix = apiKey.substring(apiKey.length() - 4);
+		int maskedLength = apiKey.length() - 12;
+		return prefix + "*".repeat(maskedLength) + suffix;
 	}
 
 	/**

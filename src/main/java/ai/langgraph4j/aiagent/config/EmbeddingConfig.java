@@ -58,13 +58,23 @@ public class EmbeddingConfig {
 
 		// API 키를 사용하여 ConnectionDetails 생성
 		String key = apiKey;
+		String keySource = "application.properties (spring.ai.google.genai.api-key)";
 		if (key == null || key.isEmpty() || key.trim().isEmpty()) {
 			key = System.getenv("GEMINI_API_KEY");
+			keySource = "Environment Variable (GEMINI_API_KEY)";
 		}
 		if (key == null || key.isEmpty()) {
 			throw new IllegalStateException(
 					"Google GenAI API key is not configured. Please set spring.ai.google.genai.api-key or GEMINI_API_KEY environment variable.");
 		}
+		
+		// API 키 로그 (보안을 위해 일부만 표시)
+		String maskedKey = maskApiKey(key);
+		log.info("=== Google GenAI Embedding API Key 설정 ===");
+		log.info("API Key 소스: {}", keySource);
+		log.info("API Key (마스킹): {}", maskedKey);
+		log.info("API Key 길이: {} 문자", key.length());
+		log.info("==========================================");
 
 		GoogleGenAiEmbeddingConnectionDetails connectionDetails = GoogleGenAiEmbeddingConnectionDetails.builder()
 				.apiKey(key)
@@ -77,5 +87,19 @@ public class EmbeddingConfig {
 				.build();
 
 		return new GoogleGenAiTextEmbeddingModel(connectionDetails, options);
+	}
+	
+	/**
+	 * API 키를 마스킹하여 로그에 안전하게 출력
+	 * 앞 8자리와 뒤 4자리만 표시하고 나머지는 *로 처리
+	 */
+	private String maskApiKey(String apiKey) {
+		if (apiKey == null || apiKey.length() <= 12) {
+			return "***";
+		}
+		String prefix = apiKey.substring(0, 8);
+		String suffix = apiKey.substring(apiKey.length() - 4);
+		int maskedLength = apiKey.length() - 12;
+		return prefix + "*".repeat(maskedLength) + suffix;
 	}
 }

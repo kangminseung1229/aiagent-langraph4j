@@ -390,50 +390,80 @@ public class ConsultationSearchService {
 			}
 
 			try {
-				// 벡터 유사도 검색 (메타데이터 필터와 함께)
-				// 메타데이터 필터로 정확히 매칭되는 법령 조문을 찾는 것이므로,
-				// 유사도 임계값을 낮춰서 필터 조건만으로도 결과가 나오도록 함
+				// 필터 표현식이 제대로 작동하지 않을 수 있으므로,
+				// 필터 없이 넓은 범위로 검색한 후 메모리에서 필터링하는 방식 사용
+				// documentType == 'lawArticle'만 필터로 적용하고, lawId와 articleKey는 메모리에서 필터링
 				double effectiveThreshold = Math.max(0.0, similarityThreshold - 0.2);
+				
+				// documentType만 필터로 적용 (더 간단한 필터가 작동할 가능성이 높음)
+				String filterExpr = "documentType == 'lawArticle'";
+				
+				// 넓은 범위로 검색 (필터링 후에도 충분한 결과를 얻기 위해 topK를 늘림)
+				int searchTopK = Math.max(topK * 10, 100); // 최소 100개 검색
+				
 				SearchRequest searchRequest = SearchRequest.builder()
 						.query(query) // 실제 검색 쿼리 사용
-						.topK(topK)
+						.topK(searchTopK)
 						.similarityThreshold(effectiveThreshold)
-						.filterExpression(
-								String.format("documentType == 'lawArticle' && lawId == '%s' && articleKey == '%s'",
-										lawId, articleKey))
+						.filterExpression(filterExpr)
 						.build();
 
-				log.debug("연관 법령 조문 검색 - lawId: {}, articleKey: {}, 임계값: {} -> {}", 
-						lawId, articleKey, similarityThreshold, effectiveThreshold);
+				log.debug("연관 법령 조문 검색 - lawId: {}, articleKey: {}, 임계값: {} -> {}, 검색 범위: {}", 
+						lawId, articleKey, similarityThreshold, effectiveThreshold, searchTopK);
 				List<Document> documents = vectorStore.similaritySearch(searchRequest);
-				log.debug("연관 법령 조문 검색 결과 - lawId: {}, articleKey: {}, 결과 수: {}", 
-						lawId, articleKey, documents.size());
-				if (!documents.isEmpty()) {
+				
+				// 메모리에서 lawId와 articleKey로 필터링
+				List<Document> filteredDocuments = documents.stream()
+						.filter(doc -> {
+							Map<String, Object> meta = doc.getMetadata();
+							String docLawId = extractString(meta, "lawId");
+							String docArticleKey = extractString(meta, "articleKey");
+							return lawId.equals(docLawId) && articleKey.equals(docArticleKey);
+						})
+						.limit(topK)
+						.toList();
+				
+				log.debug("연관 법령 조문 검색 결과 - lawId: {}, articleKey: {}, 전체 결과: {}건, 필터링 후: {}건", 
+						lawId, articleKey, documents.size(), filteredDocuments.size());
+				
+				if (!filteredDocuments.isEmpty()) {
 					log.info("연관 법령 조문 검색 성공 - lawId: {}, articleKey: {}, 유사도 점수: {}", 
-							lawId, articleKey, documents.get(0).getScore());
+							lawId, articleKey, filteredDocuments.get(0).getScore());
+					allResults.addAll(filteredDocuments);
 				} else {
-					log.warn("연관 법령 조문 검색 실패 - lawId: {}, articleKey: {}, 임계값: {}", 
-							lawId, articleKey, effectiveThreshold);
+					log.warn("연관 법령 조문 검색 실패 - lawId: {}, articleKey: {}, 임계값: {}, 전체 검색 결과: {}건", 
+							lawId, articleKey, effectiveThreshold, documents.size());
+					
 					// 임계값을 0으로 낮춰서 다시 시도
 					SearchRequest retryRequest = SearchRequest.builder()
 							.query(query)
-							.topK(topK)
+							.topK(searchTopK)
 							.similarityThreshold(0.0)
-							.filterExpression(
-									String.format("documentType == 'lawArticle' && lawId == '%s' && articleKey == '%s'",
-											lawId, articleKey))
+							.filterExpression(filterExpr)
 							.build();
+					log.debug("연관 법령 조문 검색 재시도 - 검색 범위: {}", searchTopK);
 					List<Document> retryDocuments = vectorStore.similaritySearch(retryRequest);
-					if (!retryDocuments.isEmpty()) {
+					
+					// 메모리에서 필터링
+					List<Document> filteredRetryDocuments = retryDocuments.stream()
+							.filter(doc -> {
+								Map<String, Object> meta = doc.getMetadata();
+								String docLawId = extractString(meta, "lawId");
+								String docArticleKey = extractString(meta, "articleKey");
+								return lawId.equals(docLawId) && articleKey.equals(docArticleKey);
+							})
+							.limit(topK)
+							.toList();
+					
+					if (!filteredRetryDocuments.isEmpty()) {
 						log.info("연관 법령 조문 검색 재시도 성공 - lawId: {}, articleKey: {}, 유사도 점수: {}", 
-								lawId, articleKey, retryDocuments.get(0).getScore());
-						allResults.addAll(retryDocuments);
+								lawId, articleKey, filteredRetryDocuments.get(0).getScore());
+						allResults.addAll(filteredRetryDocuments);
 					} else {
-						log.warn("연관 법령 조문 검색 재시도 실패 - lawId: {}, articleKey: {}, 벡터 스토어에 해당 법령 조문이 없을 수 있습니다", 
-								lawId, articleKey);
+						log.warn("연관 법령 조문 검색 재시도 실패 - lawId: {}, articleKey: {}, 전체 검색 결과: {}건, 벡터 스토어에 해당 법령 조문이 없을 수 있습니다", 
+								lawId, articleKey, retryDocuments.size());
 					}
 				}
-				allResults.addAll(documents);
 
 			} catch (Exception e) {
 				log.warn("법령 조문 검색 중 오류 발생 - lawId: {}, articleKey: {}", lawId, articleKey, e);
@@ -595,21 +625,33 @@ public class ConsultationSearchService {
 					continue;
 				}
 
-				// 벡터 스토어에서 법령 조문 검색 (documentType == 'lawArticle' 필터링)
-				// 메타데이터 필터만으로 정확히 매칭되는 문서 검색
+				// 벡터 스토어에서 법령 조문 검색
+				// 필터 표현식이 제대로 작동하지 않을 수 있으므로,
+				// documentType만 필터로 적용하고 lawId와 articleKey는 메모리에서 필터링
+				String filterExpr = "documentType == 'lawArticle'";
 				SearchRequest lawArticleSearchRequest = SearchRequest.builder()
 						.query("법령 조문") // 더미 쿼리 (메타데이터 필터가 주 목적)
-						.topK(10) // 넓은 범위로 검색 후 필터링
+						.topK(100) // 넓은 범위로 검색 후 필터링
 						.similarityThreshold(0.0) // 임계값 없이 모든 결과 포함
-						.filterExpression(
-								String.format("documentType == 'lawArticle' && lawId == '%s' && articleKey == '%s'",
-										lawId, articleKey))
+						.filterExpression(filterExpr)
 						.build();
 
-				List<Document> lawArticleDocuments = vectorStore.similaritySearch(lawArticleSearchRequest);
+				List<Document> allLawArticleDocuments = vectorStore.similaritySearch(lawArticleSearchRequest);
+				
+				// 메모리에서 lawId와 articleKey로 필터링
+				List<Document> lawArticleDocuments = allLawArticleDocuments.stream()
+						.filter(doc -> {
+							Map<String, Object> meta = doc.getMetadata();
+							String docLawId = extractString(meta, "lawId");
+							String docArticleKey = extractString(meta, "articleKey");
+							return lawId.equals(docLawId) && articleKey.equals(docArticleKey);
+						})
+						.limit(1) // 정확히 매칭되는 문서는 1개만 필요
+						.toList();
 
 				if (lawArticleDocuments.isEmpty()) {
-					log.debug("법령 조문을 벡터 스토어에서 찾을 수 없습니다: lawId={}, articleKey={}", lawId, articleKey);
+					log.debug("법령 조문을 벡터 스토어에서 찾을 수 없습니다: lawId={}, articleKey={}, 전체 검색 결과: {}건", 
+							lawId, articleKey, allLawArticleDocuments.size());
 					continue;
 				}
 
