@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>채팅 v2 데모 - LangGraph 기반 AI 에이전트</title>
+    <!-- Marked.js for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -153,10 +155,123 @@
             border-bottom-left-radius: 4px;
         }
 
-        .message-content.streaming::after {
-            content: '▋';
+        /* Markdown 스타일링 */
+        .message.ai .message-content h1,
+        .message.ai .message-content h2,
+        .message.ai .message-content h3,
+        .message.ai .message-content h4,
+        .message.ai .message-content h5,
+        .message.ai .message-content h6 {
+            margin-top: 1em;
+            margin-bottom: 0.5em;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+
+        .message.ai .message-content h1 {
+            font-size: 1.5em;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0.3em;
+        }
+
+        .message.ai .message-content h2 {
+            font-size: 1.3em;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 0.3em;
+        }
+
+        .message.ai .message-content h3 {
+            font-size: 1.1em;
+            margin-top: 0.8em;
+        }
+
+        .message.ai .message-content p {
+            margin-bottom: 0.8em;
+        }
+
+        .message.ai .message-content ul,
+        .message.ai .message-content ol {
+            margin: 0.8em 0;
+            padding-left: 1.5em;
+        }
+
+        .message.ai .message-content li {
+            margin-bottom: 0.4em;
+            line-height: 1.6;
+        }
+
+        .message.ai .message-content ul li {
+            list-style-type: disc;
+        }
+
+        .message.ai .message-content ol li {
+            list-style-type: decimal;
+        }
+
+        .message.ai .message-content strong {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .message.ai .message-content code {
+            background-color: #e8e8e8;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .message.ai .message-content pre {
+            background-color: #e8e8e8;
+            padding: 0.8em;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 0.8em 0;
+        }
+
+        .message.ai .message-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+
+        .message.ai .message-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 0.8em;
+            margin: 0.8em 0;
+            color: #666;
+            font-style: italic;
+        }
+
+        .message.ai .message-content hr {
+            border: none;
+            border-top: 1px solid #e0e0e0;
+            margin: 1.5em 0;
+        }
+
+        .message.ai .message-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 0.8em 0;
+        }
+
+        .message.ai .message-content table th,
+        .message.ai .message-content table td {
+            border: 1px solid #e0e0e0;
+            padding: 0.5em;
+            text-align: left;
+        }
+
+        .message.ai .message-content table th {
+            background-color: #f5f5f5;
+            font-weight: 600;
+        }
+
+        /* 스트리밍 커서는 JavaScript로 추가하므로 CSS ::after 제거 */
+
+        .cursor-blink {
             animation: blink 1s infinite;
             color: #667eea;
+            margin-left: 2px;
         }
 
         @keyframes blink {
@@ -393,6 +508,15 @@
         let currentSessionId = localStorage.getItem('chatV2SessionId');
         let abortController = null;
         let isStreaming = false;
+        let markdownBuffer = ''; // 마크다운 버퍼
+
+        // Marked.js 설정
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true, // 줄바꿈을 <br>로 변환
+                gfm: true, // GitHub Flavored Markdown 지원
+            });
+        }
 
         // 세션 ID 표시
         if (currentSessionId) {
@@ -436,6 +560,9 @@
             const aiMessageElement = addMessage('ai', '', aiMessageId);
             const aiContentElement = aiMessageElement.querySelector('.message-content');
             aiContentElement.classList.add('streaming');
+            
+            // 마크다운 버퍼 초기화
+            markdownBuffer = '';
 
             // 스트리밍 시작
             startStreaming(message, aiContentElement, aiMessageId);
@@ -454,7 +581,23 @@
 
             const contentDiv = document.createElement('div');
             contentDiv.className = 'message-content';
-            contentDiv.textContent = content;
+            
+            // 사용자 메시지는 텍스트로, AI 메시지는 마크다운으로 렌더링
+            if (type === 'user') {
+                contentDiv.textContent = content;
+            } else {
+                // AI 메시지는 마크다운 렌더링
+                if (typeof marked !== 'undefined' && content) {
+                    try {
+                        contentDiv.innerHTML = marked.parse(content);
+                    } catch (error) {
+                        console.error('마크다운 파싱 오류:', error);
+                        contentDiv.textContent = content;
+                    }
+                } else {
+                    contentDiv.textContent = content;
+                }
+            }
 
             messageDiv.appendChild(avatar);
             messageDiv.appendChild(contentDiv);
@@ -511,18 +654,30 @@
                     const reader = body.getReader();
                     const decoder = new TextDecoder();
                     let buffer = '';
-                    let fullResponse = '';
 
                     function readStream() {
                         reader.read().then(({ done, value }) => {
                             if (done) {
-                                // 스트리밍 완료
+                                // 커서 제거
+                                const existingCursor = contentElement.querySelector('.cursor-blink');
+                                if (existingCursor) {
+                                    existingCursor.remove();
+                                }
+                                
+                                // 검수 통과 여부 확인 (검수 배지가 있고 통과했는지 확인)
+                                const validationBadge = contentElement.querySelector('.validation-badge.passed');
+                                if (validationBadge && markdownBuffer) {
+                                    // 검수 통과 시 마크다운 렌더링
+                                    renderMarkdown(contentElement, markdownBuffer);
+                                }
+                                
                                 contentElement.classList.remove('streaming');
                                 status.className = 'status complete';
                                 status.textContent = '완료';
                                 submitBtn.disabled = false;
                                 isStreaming = false;
                                 abortController = null;
+                                markdownBuffer = ''; // 버퍼 초기화
 
                                 // 세션 ID 업데이트 (첫 응답에서 받은 경우)
                                 // 실제로는 서버에서 세션 ID를 반환해야 하지만, 
@@ -560,25 +715,72 @@
                                     localStorage.setItem('chatV2SessionId', currentSessionId);
                                     sessionIdDisplay.textContent = currentSessionId;
                                 } else if (eventType === 'chunk') {
-                                    fullResponse += eventData;
-                                    contentElement.textContent = fullResponse;
+                                    // 마크다운 버퍼에 추가
+                                    markdownBuffer += eventData;
+                                    
+                                    // 스트리밍 중에는 원본 텍스트로만 표시 (검수 통과 전까지)
+                                    contentElement.textContent = markdownBuffer;
+                                    
+                                    // 스트리밍 중 커서 깜빡임 효과 추가
+                                    if (contentElement.classList.contains('streaming')) {
+                                        // 기존 커서 제거 (중복 방지)
+                                        const existingCursor = contentElement.querySelector('.cursor-blink');
+                                        if (existingCursor) {
+                                            existingCursor.remove();
+                                        }
+                                        
+                                        const cursor = document.createElement('span');
+                                        cursor.className = 'cursor-blink';
+                                        cursor.textContent = '▋';
+                                        contentElement.appendChild(cursor);
+                                    }
+                                    
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
                                 } else if (eventType === 'validation') {
                                     try {
                                         const validation = JSON.parse(eventData);
-                                        addValidationBadge(messageId, validation);
+                                        addValidationBadge(messageId, validation, contentElement);
+                                        
+                                        // 검수 통과 시 마크다운 렌더링 적용
+                                        if (validation.passed && markdownBuffer) {
+                                            renderMarkdown(contentElement, markdownBuffer);
+                                        }
                                     } catch (e) {
                                         console.error('검수 결과 파싱 오류:', e);
                                     }
                                 } else if (eventType === 'complete') {
+                                    // 완료 시 커서 제거
+                                    const existingCursor = contentElement.querySelector('.cursor-blink');
+                                    if (existingCursor) {
+                                        existingCursor.remove();
+                                    }
+                                    
+                                    // 검수 통과 여부 확인 (검수 배지가 있고 통과했는지 확인)
+                                    const validationBadge = contentElement.querySelector('.validation-badge.passed');
+                                    if (validationBadge && markdownBuffer) {
+                                        // 검수 통과 시 마크다운 렌더링
+                                        renderMarkdown(contentElement, markdownBuffer);
+                                    }
+                                    
                                     contentElement.classList.remove('streaming');
                                     status.className = 'status complete';
                                     status.textContent = '완료: ' + (eventData || '');
+                                    markdownBuffer = ''; // 버퍼 초기화
                                 } else if (eventType === 'error') {
+                                    // 커서 제거
+                                    const existingCursor = contentElement.querySelector('.cursor-blink');
+                                    if (existingCursor) {
+                                        existingCursor.remove();
+                                    }
+                                    
                                     contentElement.classList.remove('streaming');
                                     status.className = 'status error';
                                     status.textContent = '오류: ' + eventData;
-                                    contentElement.textContent = fullResponse + '\n\n[오류: ' + eventData + ']';
+                                    
+                                    // 오류 시에는 원본 텍스트로 표시
+                                    const errorText = markdownBuffer + '\n\n[오류: ' + eventData + ']';
+                                    contentElement.textContent = errorText;
+                                    markdownBuffer = ''; // 버퍼 초기화
                                 }
                             }
 
@@ -610,7 +812,37 @@
                 });
         }
 
-        function addValidationBadge(messageId, validation) {
+        // 마크다운 렌더링 헬퍼 함수
+        function renderMarkdown(contentElement, markdownText) {
+            if (typeof marked !== 'undefined' && markdownText) {
+                try {
+                    // 검수 배지가 있으면 보존하기 위해 배지 HTML을 먼저 저장
+                    const validationBadge = contentElement.querySelector('.validation-badge');
+                    const badgeHTML = validationBadge ? validationBadge.outerHTML : '';
+                    
+                    // 마크다운을 HTML로 변환
+                    const html = marked.parse(markdownText);
+                    
+                    // 마크다운 렌더링 (innerHTML 설정 시 기존 내용이 모두 제거됨)
+                    contentElement.innerHTML = html;
+                    
+                    // 검수 배지 다시 추가 (마크다운 렌더링 후)
+                    if (badgeHTML) {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = badgeHTML;
+                        const badgeElement = tempDiv.firstElementChild;
+                        if (badgeElement) {
+                            contentElement.appendChild(badgeElement);
+                        }
+                    }
+                } catch (error) {
+                    console.error('마크다운 파싱 오류:', error);
+                    // 파싱 실패 시 원본 텍스트 유지
+                }
+            }
+        }
+
+        function addValidationBadge(messageId, validation, contentElement) {
             const messageElement = document.getElementById(messageId);
             if (!messageElement) return;
 

@@ -5,6 +5,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Agent 스트리밍 테스트</title>
+    <!-- Marked.js for markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@11.1.1/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -112,14 +114,136 @@
             color: #333;
             line-height: 1.8;
             font-size: 15px;
-            white-space: pre-wrap;
             word-wrap: break-word;
         }
 
-        .response-content::after {
-            content: '▋';
+        /* Markdown 스타일링 */
+        .response-content h1,
+        .response-content h2,
+        .response-content h3,
+        .response-content h4,
+        .response-content h5,
+        .response-content h6 {
+            margin-top: 1.5em;
+            margin-bottom: 0.8em;
+            font-weight: 600;
+            line-height: 1.4;
+        }
+
+        .response-content h1 {
+            font-size: 1.8em;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0.3em;
+        }
+
+        .response-content h2 {
+            font-size: 1.5em;
+            border-bottom: 1px solid #e0e0e0;
+            padding-bottom: 0.3em;
+        }
+
+        .response-content h3 {
+            font-size: 1.3em;
+            margin-top: 1.2em;
+        }
+
+        .response-content h4 {
+            font-size: 1.1em;
+        }
+
+        .response-content p {
+            margin-bottom: 1em;
+        }
+
+        .response-content ul,
+        .response-content ol {
+            margin: 1em 0;
+            padding-left: 2em;
+        }
+
+        .response-content li {
+            margin-bottom: 0.5em;
+            line-height: 1.6;
+        }
+
+        .response-content ul li {
+            list-style-type: disc;
+        }
+
+        .response-content ol li {
+            list-style-type: decimal;
+        }
+
+        .response-content ul ul,
+        .response-content ol ol,
+        .response-content ul ol,
+        .response-content ol ul {
+            margin-top: 0.5em;
+            margin-bottom: 0.5em;
+        }
+
+        .response-content strong {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .response-content code {
+            background-color: #f4f4f4;
+            padding: 0.2em 0.4em;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+
+        .response-content pre {
+            background-color: #f4f4f4;
+            padding: 1em;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 1em 0;
+        }
+
+        .response-content pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+
+        .response-content blockquote {
+            border-left: 4px solid #667eea;
+            padding-left: 1em;
+            margin: 1em 0;
+            color: #666;
+            font-style: italic;
+        }
+
+        .response-content hr {
+            border: none;
+            border-top: 1px solid #e0e0e0;
+            margin: 2em 0;
+        }
+
+        .response-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 1em 0;
+        }
+
+        .response-content table th,
+        .response-content table td {
+            border: 1px solid #e0e0e0;
+            padding: 0.6em;
+            text-align: left;
+        }
+
+        .response-content table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+
+        .cursor-blink {
             animation: blink 1s infinite;
             color: #667eea;
+            margin-left: 2px;
         }
 
         @keyframes blink {
@@ -203,6 +327,15 @@
         const responseContent = document.getElementById('responseContent');
         const status = document.getElementById('status');
         let abortController = null;
+        let markdownBuffer = ''; // 마크다운 버퍼
+
+        // Marked.js 설정
+        if (typeof marked !== 'undefined') {
+            marked.setOptions({
+                breaks: true, // 줄바꿈을 <br>로 변환
+                gfm: true, // GitHub Flavored Markdown 지원
+            });
+        }
 
         form.addEventListener('submit', function (e) {
             e.preventDefault();
@@ -221,7 +354,8 @@
             }
 
             // UI 초기화
-            responseContent.textContent = '';
+            responseContent.innerHTML = '';
+            markdownBuffer = ''; // 마크다운 버퍼 초기화
             responseContainer.classList.remove('hidden');
             submitBtn.disabled = true;
             status.classList.remove('hidden');
@@ -307,13 +441,48 @@
 
                                 // 이벤트 처리
                                 if (eventType === 'complete') {
+                                    // 완료 시 마지막 마크다운 렌더링 (커서 제거)
+                                    if (typeof marked !== 'undefined' && markdownBuffer) {
+                                        try {
+                                            const html = marked.parse(markdownBuffer);
+                                            responseContent.innerHTML = html;
+                                        } catch (error) {
+                                            console.error('마크다운 파싱 오류:', error);
+                                            responseContent.textContent = markdownBuffer;
+                                        }
+                                    }
+                                    
                                     status.className = 'status complete';
                                     status.textContent = '스트리밍 완료: ' + (eventData || '');
                                     submitBtn.disabled = false;
                                     abortController = null;
                                     return;
-                                } else if (eventType === 'message' && eventData) {
-                                    responseContent.textContent += eventData;
+                                } else if ((eventType === 'message' || eventType === 'chunk') && eventData) {
+                                    // 마크다운 버퍼에 추가
+                                    markdownBuffer += eventData;
+                                    
+                                    // 마크다운을 HTML로 변환하여 렌더링
+                                    if (typeof marked !== 'undefined') {
+                                        try {
+                                            // 마크다운을 HTML로 변환
+                                            const html = marked.parse(markdownBuffer);
+                                            responseContent.innerHTML = html;
+                                            
+                                            // 커서 깜빡임 효과를 위한 요소 추가
+                                            const cursor = document.createElement('span');
+                                            cursor.className = 'cursor-blink';
+                                            cursor.textContent = '▋';
+                                            responseContent.appendChild(cursor);
+                                        } catch (error) {
+                                            console.error('마크다운 파싱 오류:', error);
+                                            // 파싱 실패 시 원본 텍스트 표시
+                                            responseContent.textContent = markdownBuffer;
+                                        }
+                                    } else {
+                                        // marked.js가 없으면 원본 텍스트 표시
+                                        responseContent.textContent = markdownBuffer;
+                                    }
+                                    
                                     status.className = 'status streaming';
                                     status.textContent = '스트리밍 중...';
                                     responseContainer.scrollTop = responseContainer.scrollHeight;
