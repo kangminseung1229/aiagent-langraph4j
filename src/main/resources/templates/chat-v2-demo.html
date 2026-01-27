@@ -664,10 +664,8 @@
                                     existingCursor.remove();
                                 }
                                 
-                                // 검수 통과 여부 확인 (검수 배지가 있고 통과했는지 확인)
-                                const validationBadge = contentElement.querySelector('.validation-badge.passed');
-                                if (validationBadge && markdownBuffer) {
-                                    // 검수 통과 시 마크다운 렌더링
+                                // 스트리밍 완료 시 무조건 마크다운 렌더링
+                                if (markdownBuffer) {
                                     renderMarkdown(contentElement, markdownBuffer);
                                 }
                                 
@@ -741,8 +739,8 @@
                                         const validation = JSON.parse(eventData);
                                         addValidationBadge(messageId, validation, contentElement);
                                         
-                                        // 검수 통과 시 마크다운 렌더링 적용
-                                        if (validation.passed && markdownBuffer) {
+                                        // 검수 결과와 관계없이 마크다운 렌더링 (검수는 품질 평가일 뿐)
+                                        if (markdownBuffer) {
                                             renderMarkdown(contentElement, markdownBuffer);
                                         }
                                     } catch (e) {
@@ -755,10 +753,8 @@
                                         existingCursor.remove();
                                     }
                                     
-                                    // 검수 통과 여부 확인 (검수 배지가 있고 통과했는지 확인)
-                                    const validationBadge = contentElement.querySelector('.validation-badge.passed');
-                                    if (validationBadge && markdownBuffer) {
-                                        // 검수 통과 시 마크다운 렌더링
+                                    // 완료 시 무조건 마크다운 렌더링
+                                    if (markdownBuffer) {
                                         renderMarkdown(contentElement, markdownBuffer);
                                     }
                                     
@@ -837,8 +833,12 @@
                     }
                 } catch (error) {
                     console.error('마크다운 파싱 오류:', error);
-                    // 파싱 실패 시 원본 텍스트 유지
+                    // 파싱 실패 시 원본 텍스트로 폴백
+                    contentElement.textContent = markdownText;
                 }
+            } else if (markdownText) {
+                // marked가 없거나 로드되지 않은 경우 원본 텍스트로 표시
+                contentElement.textContent = markdownText;
             }
         }
 
