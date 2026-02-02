@@ -302,6 +302,38 @@
             color: #721c24;
         }
 
+        .related-references {
+            margin-top: 1em;
+            padding-top: 0.75em;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .related-references-heading {
+            font-size: 13px;
+            font-weight: 600;
+            color: #555;
+            margin-bottom: 0.5em;
+        }
+
+        .related-references-list {
+            list-style: none;
+            padding-left: 0;
+            margin: 0;
+        }
+
+        .related-references-list li {
+            margin-bottom: 0.35em;
+        }
+
+        .related-references-list a {
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .related-references-list a:hover {
+            text-decoration: underline;
+        }
+
         .validation-score {
             font-weight: 600;
         }
@@ -665,6 +697,7 @@
                     const reader = body.getReader();
                     const decoder = new TextDecoder();
                     let buffer = '';
+                    let currentRelatedRefs = [];
 
                     function readStream() {
                         reader.read().then(({ done, value }) => {
@@ -679,6 +712,30 @@
                                 if (markdownBuffer && !markdownRendered) {
                                     renderMarkdown(contentElement, markdownBuffer);
                                     markdownRendered = true;
+                                }
+                                
+                                // 관련 자료 링크 섹션 (검색 시 documentType + id 기반)
+                                if (currentRelatedRefs && currentRelatedRefs.length > 0) {
+                                    const refsDiv = document.createElement('div');
+                                    refsDiv.className = 'related-references';
+                                    const heading = document.createElement('p');
+                                    heading.className = 'related-references-heading';
+                                    heading.textContent = '관련 자료';
+                                    refsDiv.appendChild(heading);
+                                    const list = document.createElement('ul');
+                                    list.className = 'related-references-list';
+                                    currentRelatedRefs.forEach(ref => {
+                                        const li = document.createElement('li');
+                                        const a = document.createElement('a');
+                                        a.href = ref.url || '#';
+                                        a.target = '_blank';
+                                        a.rel = 'noopener noreferrer';
+                                        a.textContent = ref.title || ref.url || '링크';
+                                        li.appendChild(a);
+                                        list.appendChild(li);
+                                    });
+                                    refsDiv.appendChild(list);
+                                    contentElement.appendChild(refsDiv);
                                 }
                                 
                                 contentElement.classList.remove('streaming');
@@ -770,6 +827,12 @@
                                     // 답변 완료, 검수 시작
                                     status.className = 'status streaming';
                                     status.textContent = '검수 중...';
+                                } else if (eventType === 'relatedReferences') {
+                                    try {
+                                        currentRelatedRefs = JSON.parse(eventData);
+                                    } catch (e) {
+                                        console.error('관련 자료 파싱 오류:', e);
+                                    }
                                 } else if (eventType === 'validation') {
                                     try {
                                         const validation = JSON.parse(eventData);

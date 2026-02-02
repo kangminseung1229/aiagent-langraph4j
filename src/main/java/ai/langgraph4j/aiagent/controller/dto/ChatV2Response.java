@@ -1,5 +1,6 @@
 package ai.langgraph4j.aiagent.controller.dto;
 
+import java.util.List;
 import java.util.Map;
 
 import lombok.AllArgsConstructor;
@@ -41,6 +42,11 @@ public class ChatV2Response {
 	 * 메타데이터
 	 */
 	private Map<String, Object> metadata;
+
+	/**
+	 * 관련 자료 참조 (검색 시 documentType + id 기반 링크, LLM 응답 아래 표시용)
+	 */
+	private List<RelatedReference> relatedReferences;
 
 	/**
 	 * 검수 결과 내부 클래스

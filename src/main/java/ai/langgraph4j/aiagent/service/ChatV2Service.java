@@ -17,6 +17,7 @@ import ai.langgraph4j.aiagent.agent.nodes.ValidationNode;
 import ai.langgraph4j.aiagent.agent.state.AgentState;
 import ai.langgraph4j.aiagent.controller.dto.ChatV2Request;
 import ai.langgraph4j.aiagent.controller.dto.ChatV2Response;
+import ai.langgraph4j.aiagent.controller.dto.RelatedReference;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +42,7 @@ public class ChatV2Service {
 	private final ValidationNode validationNode;
 	private final SessionStore sessionStore;
 	private final ResourceLoader resourceLoader;
+	private final RelatedReferencesHolder relatedReferencesHolder;
 
 	/**
 	 * 채팅 실행 (비스트리밍)
@@ -50,7 +52,7 @@ public class ChatV2Service {
 	 */
 	public ChatV2Response chat(ChatV2Request request) {
 		long startTime = System.currentTimeMillis();
-		log.info("ChatV2Service: 채팅 요청 - message: {}, sessionId: {}", 
+		log.info("ChatV2Service: 채팅 요청 - message: {}, sessionId: {}",
 				request.getMessage(), request.getSessionId());
 
 		// 세션 ID 생성 또는 사용
@@ -62,7 +64,7 @@ public class ChatV2Service {
 
 		// System Instruction 처리 (비어있으면 기본값 사용)
 		String systemInstruction = getSystemInstruction(request.getSystemInstruction());
-		
+
 		// 기존 세션 로드 (대화 히스토리 포함)
 		AgentState initialState = loadOrCreateSession(sessionId, systemInstruction);
 
@@ -70,8 +72,13 @@ public class ChatV2Service {
 		UserMessage userMessage = new UserMessage(request.getMessage());
 		initialState.setUserMessage(userMessage);
 
-		// LangGraph 실행
-		AgentState finalState = agentGraph.execute(initialState, request.getMessage());
+		// setCurrentSession ~ execute ~ takeRefs 를 락으로 묶어 검색 도구(다른 스레드)가 저장한 refs를 이
+		// 세션에서만 수집
+		AgentState finalState;
+		synchronized (relatedReferencesHolder.getLock()) {
+			relatedReferencesHolder.setCurrentSession(sessionId);
+			finalState = agentGraph.execute(initialState, request.getMessage());
+		}
 
 		// 에러 처리
 		if (finalState.getError() != null && !finalState.getError().isEmpty()) {
@@ -87,10 +94,10 @@ public class ChatV2Service {
 		// 세션 저장
 		sessionStore.saveSession(sessionId, finalState);
 
-		// 응답 생성
+		// 응답 생성 (takeRefs(sessionId)는 sessionId로만 꺼내므로 락 불필요)
 		ChatV2Response response = buildResponse(finalState, sessionId, startTime);
 
-		log.info("ChatV2Service: 채팅 완료 - sessionId: {}, 실행 시간: {}초", 
+		log.info("ChatV2Service: 채팅 완료 - sessionId: {}, 실행 시간: {}초",
 				sessionId, response.getExecutionTime());
 
 		return response;
@@ -103,7 +110,7 @@ public class ChatV2Service {
 	 * @return SseEmitter
 	 */
 	public SseEmitter chatStreaming(ChatV2Request request) {
-		log.info("ChatV2Service: 스트리밍 채팅 요청 - message: {}, sessionId: {}", 
+		log.info("ChatV2Service: 스트리밍 채팅 요청 - message: {}, sessionId: {}",
 				request.getMessage(), request.getSessionId());
 
 		// 세션 ID 생성 또는 사용
@@ -115,7 +122,7 @@ public class ChatV2Service {
 
 		// System Instruction 처리 (비어있으면 기본값 사용)
 		String systemInstruction = getSystemInstruction(request.getSystemInstruction());
-		
+
 		// 람다 표현식에서 사용할 final 변수들
 		final String finalSessionId = sessionId;
 		final String message = request.getMessage();
@@ -139,7 +146,7 @@ public class ChatV2Service {
 				emitter.send(SseEmitter.event()
 						.name("start")
 						.data("채팅을 시작합니다..."));
-				
+
 				// 세션 ID 전송 (새 세션이 생성된 경우)
 				if (originalSessionId == null || originalSessionId.isBlank()) {
 					emitter.send(SseEmitter.event()
@@ -147,8 +154,19 @@ public class ChatV2Service {
 							.data(finalSessionId));
 				}
 
-				// LangGraph 스트리밍 실행
-				AgentState finalState = agentGraph.executeStreaming(initialState, message, emitter);
+				// setCurrentSession ~ executeStreaming ~ takeRefs 를 락으로 묶어, 검색 도구(다른 스레드)가
+				// currentSessionId로 저장한 refs를 이 세션에서만 수집
+				AgentState finalState;
+				java.util.List<RelatedReference> relatedRefs;
+				synchronized (relatedReferencesHolder.getLock()) {
+					relatedReferencesHolder.setCurrentSession(finalSessionId);
+
+					// LangGraph 스트리밍 실행 (이 안에서 SearchTool이 다른 스레드에서 setRefs 호출 → currentSessionId로
+					// refsBySession에 저장)
+					finalState = agentGraph.executeStreaming(initialState, message, emitter);
+
+					relatedRefs = relatedReferencesHolder.takeRefs(finalSessionId);
+				}
 
 				// 에러 처리
 				if (finalState.getError() != null && !finalState.getError().isEmpty()) {
@@ -176,6 +194,17 @@ public class ChatV2Service {
 							.data(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(validation)));
 				}
 
+				// 관련 자료 참조 전송 (검색 시 documentType + id 기반 링크)
+				if (relatedRefs != null && !relatedRefs.isEmpty()) {
+					emitter.send(SseEmitter.event()
+							.name("relatedReferences")
+							.data(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(relatedRefs)));
+					log.info("ChatV2Service: 관련 자료 {}건 전송 (검색 도구 호출됨)", relatedRefs.size());
+				} else {
+					log.info(
+							"ChatV2Service: 관련 자료 없음 - 검색 도구가 호출되지 않았거나 결과가 없습니다. (systemInstruction에서 '먼저 검색' 유도 확인)");
+				}
+
 				// 완료 이벤트
 				double executionTime = (System.currentTimeMillis() - startTime) / 1000.0;
 				emitter.send(SseEmitter.event()
@@ -184,7 +213,7 @@ public class ChatV2Service {
 
 				emitter.complete();
 
-				log.info("ChatV2Service: 스트리밍 채팅 완료 - sessionId: {}, 실행 시간: {}초", 
+				log.info("ChatV2Service: 스트리밍 채팅 완료 - sessionId: {}, 실행 시간: {}초",
 						finalSessionId, executionTime);
 
 			} catch (Exception e) {
@@ -207,7 +236,8 @@ public class ChatV2Service {
 	/**
 	 * System Instruction 가져오기 (비어있으면 기본값 파일에서 읽기)
 	 * 
-	 * @param providedSystemInstruction 사용자가 제공한 System Instruction (null 또는 빈 문자열 가능)
+	 * @param providedSystemInstruction 사용자가 제공한 System Instruction (null 또는 빈 문자열
+	 *                                  가능)
 	 * @return System Instruction 문자열
 	 */
 	private String getSystemInstruction(String providedSystemInstruction) {
@@ -216,7 +246,7 @@ public class ChatV2Service {
 			log.debug("ChatV2Service: 사용자 제공 System Instruction 사용");
 			return providedSystemInstruction.trim();
 		}
-		
+
 		// 비어있으면 기본값 파일에서 읽기
 		try {
 			Resource resource = resourceLoader.getResource("classpath:prompts/default-system-instruction.txt");
@@ -232,7 +262,7 @@ public class ChatV2Service {
 		} catch (IOException e) {
 			log.error("ChatV2Service: 기본 System Instruction 파일 읽기 실패", e);
 		}
-		
+
 		// 파일을 읽을 수 없으면 하드코딩된 기본값 사용
 		log.debug("ChatV2Service: 하드코딩된 기본 System Instruction 사용");
 		return "당신은 친절하고 도움이 되는 AI 어시스턴트입니다. 사용자의 질문에 정확하고 유용한 답변을 한국어로 제공하세요.";
@@ -243,7 +273,7 @@ public class ChatV2Service {
 	 */
 	private AgentState loadOrCreateSession(String sessionId, String systemInstruction) {
 		AgentState state = sessionStore.loadSession(sessionId);
-		
+
 		if (state == null) {
 			// 새 세션 생성
 			state = new AgentState();
@@ -255,16 +285,16 @@ public class ChatV2Service {
 			// 대화 히스토리 로드
 			java.util.List<Object> history = sessionStore.getHistory(sessionId);
 			state.setMessages(history);
-			
+
 			// System Instruction 업데이트 (새로 제공된 경우)
 			if (systemInstruction != null && !systemInstruction.isBlank()) {
 				state.setSystemInstruction(systemInstruction);
 			}
-			
-			log.debug("ChatV2Service: 기존 세션 로드 - sessionId: {}, 히스토리 크기: {}", 
+
+			log.debug("ChatV2Service: 기존 세션 로드 - sessionId: {}, 히스토리 크기: {}",
 					sessionId, history.size());
 		}
-		
+
 		return state;
 	}
 
@@ -280,14 +310,21 @@ public class ChatV2Service {
 	 */
 	private ChatV2Response buildResponse(AgentState state, String sessionId, long startTime) {
 		double executionTime = (System.currentTimeMillis() - startTime) / 1000.0;
-		
+
 		String response = state.getAiMessage() != null ? state.getAiMessage().text() : "";
-		
+
+		// 검색 도구로 sessionId 기준 저장된 관련 자료 참조 (호출 측에서 락 유지 중일 때 takeRefs)
+		java.util.List<RelatedReference> relatedRefs = relatedReferencesHolder.takeRefs(sessionId);
+		if (relatedRefs == null || relatedRefs.isEmpty()) {
+			log.debug("ChatV2Service: 비스트리밍 응답 - 관련 자료 없음 (검색 도구 미호출 또는 결과 없음)");
+		}
+
 		ChatV2Response.ChatV2ResponseBuilder builder = ChatV2Response.builder()
 				.response(response)
 				.sessionId(sessionId)
 				.executionTime(executionTime)
-				.metadata(state.getMetadata());
+				.metadata(state.getMetadata())
+				.relatedReferences(relatedRefs != null && !relatedRefs.isEmpty() ? relatedRefs : null);
 
 		// 검수 결과 추가 (있는 경우)
 		if (state.getMetadata().containsKey("validationScore")) {

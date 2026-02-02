@@ -1,5 +1,6 @@
 package ai.langgraph4j.aiagent.tools;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.ai.tool.annotation.Tool;
@@ -7,7 +8,9 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
+import ai.langgraph4j.aiagent.controller.dto.RelatedReference;
 import ai.langgraph4j.aiagent.service.ConsultationSearchService;
+import ai.langgraph4j.aiagent.service.RelatedReferencesHolder;
 import ai.langgraph4j.aiagent.service.dto.SearchResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -29,7 +32,13 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class SearchTool {
 
+	private static final String BASE_URL = "https://beta.taxnet.co.kr";
+	private static final String PATH_COUNSEL_DETAIL = "/counsel/counsel/counsel-detail";
+	private static final String PATH_LAW_ARTICLE = "/law/article";
+	private static final String PATH_YP_DETAIL = "/taxmanage/yp/yp-detail";
+
 	private final ConsultationSearchService consultationSearchService;
+	private final RelatedReferencesHolder relatedReferencesHolder;
 
 	// Phase 3에서 실제 웹 검색 API 통합 시 사용 예정
 	@SuppressWarnings("unused")
@@ -66,6 +75,9 @@ public class SearchTool {
 
 			// 검색 결과를 LLM에 전달 가능한 형태로 포맷팅
 			String formattedResult = formatSearchResults(query, results);
+
+			// 관련 자료 참조( documentType + id ) 임시 저장 — LLM 응답 아래 링크용
+			relatedReferencesHolder.setRefs(toRelatedReferences(results));
 
 			log.info("SearchTool: 하이브리드 검색 완료 - {}건의 결과 반환", results.size());
 			return formattedResult;
@@ -129,6 +141,64 @@ public class SearchTool {
 	}
 
 	/**
+	 * 검색 결과를 관련 자료 참조 목록으로 변환 (documentType + id 기반 URL)
+	 */
+	private List<RelatedReference> toRelatedReferences(List<SearchResult> results) {
+		if (results == null || results.isEmpty()) {
+			return List.of();
+		}
+		List<RelatedReference> refs = new ArrayList<>(results.size());
+		for (SearchResult r : results) {
+			String docType = r.getDocumentType() != null ? r.getDocumentType() : "";
+			String title = r.getTitle() != null ? r.getTitle() : "";
+			String url = null;
+			Long counselId = null;
+			String lawId = null;
+			String articleKey = null;
+			Long ypId = null;
+
+			switch (docType) {
+				case "counsel" -> {
+					counselId = r.getCounselId();
+					if (counselId != null) {
+						url = BASE_URL + PATH_COUNSEL_DETAIL + "?id=" + counselId;
+					}
+				}
+				case "lawArticle" -> {
+					if (r.getLawArticles() != null && !r.getLawArticles().isEmpty()) {
+						SearchResult.LawArticleInfo info = r.getLawArticles().get(0);
+						lawId = info.getLawId();
+						articleKey = info.getArticleKey();
+						if (lawId != null && articleKey != null) {
+							url = BASE_URL + PATH_LAW_ARTICLE + "?lawId=" + lawId + "&articleKey=" + articleKey;
+						}
+					}
+				}
+				case "yp" -> {
+					ypId = r.getYpId();
+					if (ypId != null) {
+						url = BASE_URL + PATH_YP_DETAIL + "?id=" + ypId;
+					}
+				}
+				default -> {
+				}
+			}
+			if (url != null) {
+				refs.add(RelatedReference.builder()
+						.documentType(docType)
+						.title(title)
+						.url(url)
+						.counselId(counselId)
+						.lawId(lawId)
+						.articleKey(articleKey)
+						.ypId(ypId)
+						.build());
+			}
+		}
+		return refs;
+	}
+
+	/**
 	 * 개별 검색 결과를 포맷팅
 	 * 
 	 * @param sb        StringBuilder
@@ -139,8 +209,7 @@ public class SearchTool {
 	private void formatSearchResult(StringBuilder sb, int index, SearchResult result, boolean isCounsel) {
 		// 상담 결과인 경우 링크 추가
 		if (isCounsel && result.getCounselId() != null) {
-			String link = String.format("https://beta.taxnet.co.kr/counsel/counsel/counsel-detail?id=%d", 
-					result.getCounselId());
+			String link = BASE_URL + PATH_COUNSEL_DETAIL + "?id=" + result.getCounselId();
 			sb.append("[").append(index).append("](").append(link).append(") ");
 		} else {
 			sb.append("[").append(index).append("] ");
