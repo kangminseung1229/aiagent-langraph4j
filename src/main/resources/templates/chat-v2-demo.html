@@ -1159,6 +1159,23 @@
                     const decoder = new TextDecoder();
                     let buffer = '';
                     let currentRelatedRefs = [];
+                    const parserBasePath = (currentPath || window.location.pathname).replace(/\/demo\/?$/, '') || '/api/v2/chat';
+
+                    function scheduleRenderWithParser(text) {
+                        if (!text || markdownRendered) return;
+                        markdownRendered = true;
+                        fetch(parserBasePath + '/parser', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'text/plain; charset=UTF-8' },
+                            body: text
+                        })
+                            .then(res => res.ok ? res.text() : text)
+                            .then(parsed => renderMarkdown(contentElement, parsed))
+                            .catch(e => {
+                                console.warn('Parser 호출 실패, 원본으로 렌더링:', e);
+                                renderMarkdown(contentElement, text);
+                            });
+                    }
 
                     function readStream() {
                         reader.read().then(({ done, value }) => {
@@ -1169,10 +1186,9 @@
                                     existingCursor.remove();
                                 }
 
-                                // 스트리밍 완료 시 즉시 마크다운 렌더링 (검수 전에 적용)
+                                // 스트리밍 완료 시 Parser 거친 후 마크다운 렌더링 (검수 전에 적용)
                                 if (markdownBuffer && !markdownRendered) {
-                                    renderMarkdown(contentElement, markdownBuffer);
-                                    markdownRendered = true;
+                                    scheduleRenderWithParser(markdownBuffer);
                                 }
 
                                 // 관련 자료 링크 섹션 (검색 시 documentType + id 기반)
@@ -1272,15 +1288,14 @@
 
                                     chatContainer.scrollTop = chatContainer.scrollHeight;
                                 } else if (eventType === 'streaming-complete') {
-                                    // 스트리밍 완료 시 즉시 마크다운 렌더링 (검수 전에 적용)
+                                    // 스트리밍 완료 시 Parser 거친 후 마크다운 렌더링 (검수 전에 적용)
                                     const existingCursor = contentElement.querySelector('.cursor-blink');
                                     if (existingCursor) {
                                         existingCursor.remove();
                                     }
 
                                     if (markdownBuffer && !markdownRendered) {
-                                        renderMarkdown(contentElement, markdownBuffer);
-                                        markdownRendered = true;
+                                        scheduleRenderWithParser(markdownBuffer);
                                     }
 
                                     contentElement.classList.remove('streaming');
@@ -1316,10 +1331,9 @@
                                     }
 
                                     // 완료 이벤트는 스트리밍 완료 후에 올 수 있으므로,
-                                    // 아직 마크다운이 렌더링되지 않았을 때만 렌더링 (fallback)
+                                    // 아직 마크다운이 렌더링되지 않았을 때만 Parser 거친 후 렌더링 (fallback)
                                     if (markdownBuffer && !markdownRendered) {
-                                        renderMarkdown(contentElement, markdownBuffer);
-                                        markdownRendered = true;
+                                        scheduleRenderWithParser(markdownBuffer);
                                     }
 
                                     contentElement.classList.remove('streaming');

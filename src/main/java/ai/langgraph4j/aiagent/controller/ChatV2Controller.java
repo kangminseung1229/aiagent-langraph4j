@@ -16,6 +16,9 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import ai.langgraph4j.aiagent.controller.dto.ChatV2Request;
 import ai.langgraph4j.aiagent.controller.dto.ChatV2Response;
 import ai.langgraph4j.aiagent.controller.dto.ErrorResponse;
+import ai.langgraph4j.aiagent.parser.ParserParam;
+import ai.langgraph4j.aiagent.parser.ParserReturnType;
+import ai.langgraph4j.aiagent.parser.ParserService;
 import ai.langgraph4j.aiagent.service.ChatSessionPersistenceService;
 import ai.langgraph4j.aiagent.service.ChatV2Service;
 import jakarta.validation.Valid;
@@ -40,6 +43,7 @@ public class ChatV2Controller {
 
 	private final ChatV2Service chatV2Service;
 	private final ChatSessionPersistenceService chatSessionPersistenceService;
+	private final ParserService parserService;
 
 	/**
 	 * 채팅 실행 (비스트리밍)
@@ -178,4 +182,33 @@ public class ChatV2Controller {
 	public ModelAndView demoPage() {
 		return new ModelAndView("chat-v2-demo");
 	}
+
+	/*
+	 * 파서 실행 (법령 판례 링크 추가)
+	 * 
+	 * @param html 파서 요청
+	 * 
+	 * @return 파서 응답
+	 */
+	@PostMapping("/parser")
+	public ResponseEntity<String> parser(@RequestBody String html) {
+
+		html = parserService.wrapYpWithLink(html);
+
+		ParserParam parserParam = ParserParam.builder()
+				.query(html)
+				.target_blank_yn("Y")
+				.build();
+
+		ParserReturnType response = parserService.executeParser(parserParam);
+
+		String responseString = response.getResult().getApi_link_with_text() != null
+				? response.getResult().getApi_link_with_text()
+				: html;
+
+		responseString = responseString.replace("/law/law-link", "https://beta.taxnet.co.kr/law/law-link");
+
+		return ResponseEntity.ok(responseString);
+	}
+
 }
