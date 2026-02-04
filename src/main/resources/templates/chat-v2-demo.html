@@ -448,6 +448,21 @@
             margin-bottom: 0.5em;
         }
 
+        .related-references-group {
+            margin-bottom: 0.75em;
+        }
+
+        .related-references-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .related-references-group-heading {
+            font-size: 12px;
+            font-weight: 600;
+            color: #667eea;
+            margin-bottom: 0.35em;
+        }
+
         .related-references-list {
             list-style: none;
             padding-left: 0;
@@ -1191,27 +1206,71 @@
                                     scheduleRenderWithParser(markdownBuffer);
                                 }
 
-                                // 관련 자료 링크 섹션 (검색 시 documentType + id 기반)
+                                // 관련 자료 링크 섹션 (DocumentType별 그룹: 상담, 예판, 법령)
                                 if (currentRelatedRefs && currentRelatedRefs.length > 0) {
                                     const refsDiv = document.createElement('div');
                                     refsDiv.className = 'related-references';
-                                    const heading = document.createElement('p');
-                                    heading.className = 'related-references-heading';
-                                    heading.textContent = '관련 자료';
-                                    refsDiv.appendChild(heading);
-                                    const list = document.createElement('ul');
-                                    list.className = 'related-references-list';
+                                    const mainHeading = document.createElement('p');
+                                    mainHeading.className = 'related-references-heading';
+                                    mainHeading.textContent = '관련 자료';
+                                    refsDiv.appendChild(mainHeading);
+                                    const groupLabels = { counsel: '상담', yp: '예판', lawArticle: '법령' };
+                                    const groupOrder = ['counsel', 'yp', 'lawArticle'];
+                                    const grouped = {};
                                     currentRelatedRefs.forEach(ref => {
-                                        const li = document.createElement('li');
-                                        const a = document.createElement('a');
-                                        a.href = ref.url || '#';
-                                        a.target = '_blank';
-                                        a.rel = 'noopener noreferrer';
-                                        a.textContent = ref.title || ref.url || '링크';
-                                        li.appendChild(a);
-                                        list.appendChild(li);
+                                        const type = ref.documentType || 'other';
+                                        if (!grouped[type]) grouped[type] = [];
+                                        grouped[type].push(ref);
                                     });
-                                    refsDiv.appendChild(list);
+                                    groupOrder.forEach(type => {
+                                        const items = grouped[type];
+                                        if (!items || items.length === 0) return;
+                                        const label = groupLabels[type] || type;
+                                        const section = document.createElement('div');
+                                        section.className = 'related-references-group';
+                                        const groupHeading = document.createElement('p');
+                                        groupHeading.className = 'related-references-group-heading';
+                                        groupHeading.textContent = label;
+                                        section.appendChild(groupHeading);
+                                        const list = document.createElement('ul');
+                                        list.className = 'related-references-list';
+                                        items.forEach(ref => {
+                                            const li = document.createElement('li');
+                                            const a = document.createElement('a');
+                                            a.href = ref.url || '#';
+                                            a.target = '_blank';
+                                            a.rel = 'noopener noreferrer';
+                                            a.textContent = ref.title || ref.url || '링크';
+                                            li.appendChild(a);
+                                            list.appendChild(li);
+                                        });
+                                        section.appendChild(list);
+                                        refsDiv.appendChild(section);
+                                    });
+                                    // documentType이 other이거나 미지정인 경우 마지막에 '기타'로 표시
+                                    const others = grouped['other'];
+                                    if (others && others.length > 0) {
+                                        const section = document.createElement('div');
+                                        section.className = 'related-references-group';
+                                        const groupHeading = document.createElement('p');
+                                        groupHeading.className = 'related-references-group-heading';
+                                        groupHeading.textContent = '기타';
+                                        section.appendChild(groupHeading);
+                                        const list = document.createElement('ul');
+                                        list.className = 'related-references-list';
+                                        others.forEach(ref => {
+                                            const li = document.createElement('li');
+                                            const a = document.createElement('a');
+                                            a.href = ref.url || '#';
+                                            a.target = '_blank';
+                                            a.rel = 'noopener noreferrer';
+                                            a.textContent = ref.title || ref.url || '링크';
+                                            li.appendChild(a);
+                                            list.appendChild(li);
+                                        });
+                                        section.appendChild(list);
+                                        refsDiv.appendChild(section);
+                                    }
                                     contentElement.appendChild(refsDiv);
                                 }
 

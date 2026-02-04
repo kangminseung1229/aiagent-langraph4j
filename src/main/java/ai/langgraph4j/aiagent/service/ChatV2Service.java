@@ -6,7 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
+import java.util.concurrent.CompletableFuture;
 
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.ResourceLoader;
@@ -15,7 +15,6 @@ import org.springframework.util.StreamUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import ai.langgraph4j.aiagent.agent.graph.AgentGraph;
-import ai.langgraph4j.aiagent.agent.nodes.ResponseNode;
 import ai.langgraph4j.aiagent.agent.nodes.ValidationNode;
 import ai.langgraph4j.aiagent.agent.state.AgentState;
 import ai.langgraph4j.aiagent.controller.dto.ChatV2Request;
@@ -24,6 +23,7 @@ import ai.langgraph4j.aiagent.controller.dto.RelatedReference;
 import ai.langgraph4j.aiagent.service.ChatSessionPersistenceService.ChatMessageDto;
 import ai.langgraph4j.aiagent.service.ChatSessionPersistenceService.ChatSessionWithMessagesDto;
 import ai.langgraph4j.aiagent.service.dto.MessageDto;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
 import lombok.RequiredArgsConstructor;
@@ -44,12 +44,17 @@ import lombok.extern.slf4j.Slf4j;
 public class ChatV2Service {
 
 	private final AgentGraph agentGraph;
-	private final ResponseNode responseNode;
 	private final ValidationNode validationNode;
 	private final SessionStore sessionStore;
 	private final ChatSessionPersistenceService chatSessionPersistenceService;
 	private final ResourceLoader resourceLoader;
 	private final RelatedReferencesHolder relatedReferencesHolder;
+
+	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+	private static final String METADATA_VALIDATION_SCORE = "validationScore";
+	private static final String METADATA_VALIDATION_PASSED = "validationPassed";
+	private static final String METADATA_VALIDATION_FEEDBACK = "validationFeedback";
+	private static final String METADATA_VALIDATION_NEEDS_REGENERATION = "validationNeedsRegeneration";
 
 	/**
 	 * 채팅 실행 (비스트리밍)
@@ -59,15 +64,11 @@ public class ChatV2Service {
 	 */
 	public ChatV2Response chat(ChatV2Request request) {
 		long startTime = System.currentTimeMillis();
-		log.info("ChatV2Service: 채팅 요청 - message: {}, sessionId: {}",
-				request.getMessage(), request.getSessionId());
+		log.info("ChatV2Service: 채팅 요청 - sessionId: {}, messageLength: {}",
+				request.getSessionId(), request.getMessage() != null ? request.getMessage().length() : 0);
 
 		// 세션 ID 생성 또는 사용
-		String sessionId = request.getSessionId();
-		if (sessionId == null || sessionId.isBlank()) {
-			sessionId = generateSessionId();
-			log.info("ChatV2Service: 새 세션 생성 - sessionId: {}", sessionId);
-		}
+		String sessionId = resolveOrCreateSessionId(request.getSessionId());
 
 		// System Instruction 처리 (비어있으면 기본값 사용)
 		String systemInstruction = getSystemInstruction(request.getSystemInstruction());
@@ -120,70 +121,33 @@ public class ChatV2Service {
 	 * @return SseEmitter
 	 */
 	public SseEmitter chatStreaming(ChatV2Request request) {
-		log.info("ChatV2Service: 스트리밍 채팅 요청 - message: {}, sessionId: {}",
-				request.getMessage(), request.getSessionId());
+		log.info("ChatV2Service: 스트리밍 채팅 요청 - sessionId: {}, messageLength: {}",
+				request.getSessionId(), request.getMessage() != null ? request.getMessage().length() : 0);
 
 		// 세션 ID 생성 또는 사용
-		String sessionId = request.getSessionId();
-		if (sessionId == null || sessionId.isBlank()) {
-			sessionId = generateSessionId();
-			log.info("ChatV2Service: 새 세션 생성 - sessionId: {}", sessionId);
-		}
+		final String originalSessionId = request.getSessionId();
+		final boolean isNewSession = originalSessionId == null || originalSessionId.isBlank();
+		final String sessionId = resolveOrCreateSessionId(originalSessionId);
 
 		// System Instruction 처리 (비어있으면 기본값 사용)
-		String systemInstruction = getSystemInstruction(request.getSystemInstruction());
+		final String systemInstruction = getSystemInstruction(request.getSystemInstruction());
 
 		// 람다 표현식에서 사용할 final 변수들
-		final String finalSessionId = sessionId;
 		final String message = request.getMessage();
-		final String finalSystemInstruction = systemInstruction;
-		final String originalSessionId = request.getSessionId();
 
 		SseEmitter emitter = new SseEmitter(Long.MAX_VALUE);
 
-		java.util.concurrent.CompletableFuture.runAsync(() -> {
+		CompletableFuture.runAsync(() -> {
 			try {
 				long startTime = System.currentTimeMillis();
 
-				// 기존 세션 로드
-				AgentState initialState = loadOrCreateSession(finalSessionId, finalSystemInstruction);
+				StreamingExecutionContext ctx = prepareStreamingContext(sessionId, systemInstruction, message);
+				sendStreamingStartEvents(emitter, sessionId, isNewSession);
 
-				// 사용자 메시지 추가
-				UserMessage userMessage = new UserMessage(message);
-				initialState.setUserMessage(userMessage);
+				StreamingResult result = executeStreamingWithRelatedRefs(ctx.initialState, sessionId, message, emitter);
+				AgentState finalState = result.finalState;
 
-				// 스트리밍 시작 이벤트 (세션 ID 포함)
-				emitter.send(SseEmitter.event()
-						.name("start")
-						.data("채팅을 시작합니다..."));
-
-				// 세션 ID 전송 (새 세션이 생성된 경우)
-				if (originalSessionId == null || originalSessionId.isBlank()) {
-					emitter.send(SseEmitter.event()
-							.name("session")
-							.data(finalSessionId));
-				}
-
-				// setCurrentSession ~ executeStreaming ~ takeRefs 를 락으로 묶어, 검색 도구(다른 스레드)가
-				// currentSessionId로 저장한 refs를 이 세션에서만 수집
-				AgentState finalState;
-				java.util.List<RelatedReference> relatedRefs;
-				synchronized (relatedReferencesHolder.getLock()) {
-					relatedReferencesHolder.setCurrentSession(finalSessionId);
-
-					// LangGraph 스트리밍 실행 (이 안에서 SearchTool이 다른 스레드에서 setRefs 호출 → currentSessionId로
-					// refsBySession에 저장)
-					finalState = agentGraph.executeStreaming(initialState, message, emitter);
-
-					relatedRefs = relatedReferencesHolder.takeRefs(finalSessionId);
-				}
-
-				// 에러 처리
-				if (finalState.getError() != null && !finalState.getError().isEmpty()) {
-					emitter.send(SseEmitter.event()
-							.name("error")
-							.data(finalState.getError()));
-					emitter.complete();
+				if (completeStreamingOnError(emitter, finalState)) {
 					return;
 				}
 
@@ -191,28 +155,28 @@ public class ChatV2Service {
 				finalState = validationNode.validate(finalState);
 
 				// 대화 히스토리 저장 (Redis)
-				saveToHistory(finalSessionId, userMessage, finalState.getAiMessage());
+				saveToHistory(sessionId, ctx.userMessage, finalState.getAiMessage());
 
 				// DB 영구 저장 (저장 버튼 없이 항상 저장)
-				chatSessionPersistenceService.persistTurn(finalSessionId, userMessage, finalState.getAiMessage());
+				chatSessionPersistenceService.persistTurn(sessionId, ctx.userMessage, finalState.getAiMessage());
 
 				// 세션 저장
-				sessionStore.saveSession(finalSessionId, finalState);
+				sessionStore.saveSession(sessionId, finalState);
 
 				// 검수 결과 전송 (있는 경우)
-				if (finalState.getMetadata().containsKey("validationScore")) {
+				if (finalState.getMetadata().containsKey(METADATA_VALIDATION_SCORE)) {
 					ChatV2Response.ValidationResult validation = buildValidationResult(finalState);
 					emitter.send(SseEmitter.event()
 							.name("validation")
-							.data(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(validation)));
+							.data(OBJECT_MAPPER.writeValueAsString(validation)));
 				}
 
 				// 관련 자료 참조 전송 (검색 시 documentType + id 기반 링크)
-				if (relatedRefs != null && !relatedRefs.isEmpty()) {
+				if (result.relatedRefs != null && !result.relatedRefs.isEmpty()) {
 					emitter.send(SseEmitter.event()
 							.name("relatedReferences")
-							.data(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(relatedRefs)));
-					log.info("ChatV2Service: 관련 자료 {}건 전송 (검색 도구 호출됨)", relatedRefs.size());
+							.data(OBJECT_MAPPER.writeValueAsString(result.relatedRefs)));
+					log.info("ChatV2Service: 관련 자료 {}건 전송 (검색 도구 호출됨)", result.relatedRefs.size());
 				} else {
 					log.info(
 							"ChatV2Service: 관련 자료 없음 - 검색 도구가 호출되지 않았거나 결과가 없습니다. (systemInstruction에서 '먼저 검색' 유도 확인)");
@@ -227,7 +191,7 @@ public class ChatV2Service {
 				emitter.complete();
 
 				log.info("ChatV2Service: 스트리밍 채팅 완료 - sessionId: {}, 실행 시간: {}초",
-						finalSessionId, executionTime);
+						sessionId, executionTime);
 
 			} catch (Exception e) {
 				log.error("ChatV2Service: 스트리밍 채팅 중 오류 발생", e);
@@ -244,6 +208,17 @@ public class ChatV2Service {
 		});
 
 		return emitter;
+	}
+
+	private boolean completeStreamingOnError(SseEmitter emitter, AgentState finalState) throws IOException {
+		if (finalState.getError() == null || finalState.getError().isEmpty()) {
+			return false;
+		}
+		emitter.send(SseEmitter.event()
+				.name("error")
+				.data(finalState.getError()));
+		emitter.complete();
+		return true;
 	}
 
 	/**
@@ -344,7 +319,7 @@ public class ChatV2Service {
 						.map(m -> "USER".equalsIgnoreCase(m.role())
 								? MessageDto.fromUserMessage(new UserMessage(m.content()))
 								: MessageDto.fromAiMessage(new AiMessage(m.content())))
-						.collect(Collectors.toList());
+						.toList();
 				sessionStore.setHistory(sessionId, dtos);
 				log.info("ChatV2Service: Redis 복원 완료 - sessionId: {}, 메시지 수: {}", sessionId, dtos.size());
 			}
@@ -378,7 +353,7 @@ public class ChatV2Service {
 				.relatedReferences(relatedRefs != null && !relatedRefs.isEmpty() ? relatedRefs : null);
 
 		// 검수 결과 추가 (있는 경우)
-		if (state.getMetadata().containsKey("validationScore")) {
+		if (state.getMetadata().containsKey(METADATA_VALIDATION_SCORE)) {
 			ChatV2Response.ValidationResult validation = buildValidationResult(state);
 			builder.validation(validation);
 		}
@@ -390,15 +365,15 @@ public class ChatV2Service {
 	 * 검수 결과 생성
 	 */
 	private ChatV2Response.ValidationResult buildValidationResult(AgentState state) {
-		Object scoreObj = state.getMetadata().get("validationScore");
-		Object passedObj = state.getMetadata().get("validationPassed");
-		Object feedbackObj = state.getMetadata().get("validationFeedback");
-		Object needsRegenerationObj = state.getMetadata().get("validationNeedsRegeneration");
+		Object scoreObj = state.getMetadata().get(METADATA_VALIDATION_SCORE);
+		Object passedObj = state.getMetadata().get(METADATA_VALIDATION_PASSED);
+		Object feedbackObj = state.getMetadata().get(METADATA_VALIDATION_FEEDBACK);
+		Object needsRegenerationObj = state.getMetadata().get(METADATA_VALIDATION_NEEDS_REGENERATION);
 
-		Double score = scoreObj instanceof Number ? ((Number) scoreObj).doubleValue() : null;
-		Boolean passed = passedObj instanceof Boolean ? (Boolean) passedObj : null;
+		Double score = scoreObj instanceof Number number ? number.doubleValue() : null;
+		Boolean passed = passedObj instanceof Boolean bool ? bool : null;
 		String feedback = feedbackObj != null ? feedbackObj.toString() : null;
-		Boolean needsRegeneration = needsRegenerationObj instanceof Boolean ? (Boolean) needsRegenerationObj : null;
+		Boolean needsRegeneration = needsRegenerationObj instanceof Boolean bool ? bool : null;
 
 		return ChatV2Response.ValidationResult.builder()
 				.score(score)
@@ -408,11 +383,61 @@ public class ChatV2Service {
 				.build();
 	}
 
+	private String resolveOrCreateSessionId(String requestedSessionId) {
+		if (requestedSessionId == null || requestedSessionId.isBlank()) {
+			String newSessionId = generateSessionId();
+			log.info("ChatV2Service: 새 세션 생성 - sessionId: {}", newSessionId);
+			return newSessionId;
+		}
+		return requestedSessionId;
+	}
+
+	private StreamingExecutionContext prepareStreamingContext(String sessionId, String systemInstruction, String message) {
+		AgentState initialState = loadOrCreateSession(sessionId, systemInstruction);
+		UserMessage userMessage = new UserMessage(message);
+		initialState.setUserMessage(userMessage);
+		return new StreamingExecutionContext(initialState, userMessage);
+	}
+
+	private void sendStreamingStartEvents(SseEmitter emitter, String sessionId, boolean isNewSession) throws IOException {
+		emitter.send(SseEmitter.event()
+				.name("start")
+				.data("채팅을 시작합니다..."));
+
+		if (isNewSession) {
+			emitter.send(SseEmitter.event()
+					.name("session")
+					.data(sessionId));
+		}
+	}
+
+	private StreamingResult executeStreamingWithRelatedRefs(
+			AgentState initialState,
+			String sessionId,
+			String message,
+			SseEmitter emitter
+	) {
+		synchronized (relatedReferencesHolder.getLock()) {
+			relatedReferencesHolder.setCurrentSession(sessionId);
+
+			// LangGraph 스트리밍 실행 (이 안에서 SearchTool이 다른 스레드에서 setRefs 호출 → currentSessionId로 refsBySession에 저장)
+			AgentState finalState = agentGraph.executeStreaming(initialState, message, emitter);
+			List<RelatedReference> relatedRefs = relatedReferencesHolder.takeRefs(sessionId);
+			return new StreamingResult(finalState, relatedRefs);
+		}
+	}
+
+	private record StreamingExecutionContext(AgentState initialState, UserMessage userMessage) {
+	}
+
+	private record StreamingResult(AgentState finalState, List<RelatedReference> relatedRefs) {
+	}
+
 	/**
 	 * 세션 ID 생성
 	 */
 	private String generateSessionId() {
-		return "session-" + UUID.randomUUID().toString();
+		return "session-" + UUID.randomUUID();
 	}
 
 	/**
