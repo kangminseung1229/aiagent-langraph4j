@@ -1,12 +1,13 @@
 # Hello Swagger App
 
-Spring Boot 3 + springdoc-openapi demo.
+Node.js Express demo with Swagger UI. Cursor Apps hosting runs this web app (not the JVM Spring Boot sibling in `hello-swagger-spring/`).
 
 ## Run
 
 ```bash
 cd hello-swagger-app
-./mvnw spring-boot:run
+npm install
+npm start
 ```
 
 ## Endpoints
@@ -14,5 +15,6 @@ cd hello-swagger-app
 | Path | Description |
 |------|-------------|
 | `GET /api/hello` | Returns `{"message":"hello world"}` |
-| `/swagger-ui.html` | Swagger UI |
+| `/swagger-ui/` | Swagger UI |
 | `/v3/api-docs` | OpenAPI JSON |
+| `/health` | Health check |
