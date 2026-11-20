@@ -1,20 +1,19 @@
 # Hello Swagger App
 
-Node.js Express demo with Swagger UI. Cursor Apps hosting runs this web app (not the JVM Spring Boot sibling in `hello-swagger-spring/`).
+Next.js App Router demo for Cursor Apps hosting.
 
 ## Run
 
 ```bash
 cd hello-swagger-app
 npm install
-npm start
+npm run dev
 ```
 
 ## Endpoints
 
 | Path | Description |
 |------|-------------|
-| `GET /api/hello` | Returns `{"message":"hello world"}` |
-| `/swagger-ui/` | Swagger UI |
-| `/v3/api-docs` | OpenAPI JSON |
-| `/health` | Health check |
+| `/` | OpenAPI-style UI with Try it out |
+| `GET /api/hello` | `{"message":"hello world"}` |
+| `GET /api/openapi` | OpenAPI JSON |
