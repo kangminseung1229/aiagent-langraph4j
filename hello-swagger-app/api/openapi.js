@@ -12,7 +12,7 @@ const openApiDocument = {
         summary: "Say hello",
         description: "Returns a simple hello world message.",
         responses: {
-          "200": {
+          200: {
             description: "Greeting returned",
             content: {
               "application/json": {
@@ -32,8 +32,7 @@ const openApiDocument = {
   },
 };
 
-export async function GET() {
-  return Response.json(openApiDocument, {
-    headers: { "cache-control": "no-store" },
-  });
-}
+module.exports = function handler(req, res) {
+  res.setHeader("cache-control", "no-store");
+  res.status(200).json(openApiDocument);
+};

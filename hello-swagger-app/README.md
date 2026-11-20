@@ -1,13 +1,12 @@
 # Hello Swagger App
 
-Next.js App Router demo for Cursor Apps hosting.
+Static `public/` site + `/api` handlers for Cursor Apps hosting.
 
-## Run
+## Run locally
 
 ```bash
 cd hello-swagger-app
-npm install
-npm run dev
+npm start
 ```
 
 ## Endpoints

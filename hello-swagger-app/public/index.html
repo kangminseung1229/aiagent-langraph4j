@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hello Swagger API</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <h1>Hello Swagger API</h1>
+        <p>
+          OpenAPI-style demo. <code>GET /api/hello</code> returns
+          <code>{"message":"hello world"}</code>.
+        </p>
+      </section>
+
+      <section class="panel">
+        <div class="endpoint">
+          <span class="method">GET</span>
+          <span class="path">/api/hello</span>
+        </div>
+        <div class="body">
+          <h2>Say hello</h2>
+          <p>Returns a simple hello world message.</p>
+          <button id="try" type="button">Try it out</button>
+          <pre id="result" class="result">Click Try it out to call GET /api/hello</pre>
+        </div>
+      </section>
+
+      <div class="links">
+        <a href="/api/hello">Open /api/hello</a>
+        <a href="/api/openapi">Open OpenAPI JSON</a>
+      </div>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -10,12 +10,9 @@
   --get: #1d4ed8;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-html,
-body {
+html, body {
   margin: 0;
   min-height: 100%;
   background:
@@ -25,9 +22,7 @@ body {
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
 }
 
-a {
-  color: var(--accent);
-}
+a { color: var(--accent); }
 
 main {
   max-width: 920px;
@@ -83,20 +78,9 @@ main {
   font-size: 0.98rem;
 }
 
-.body {
-  padding: 18px;
-}
-
-.body h2 {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
-}
-
-.body p {
-  margin: 0 0 16px;
-  color: var(--muted);
-  line-height: 1.5;
-}
+.body { padding: 18px; }
+.body h2 { margin: 0 0 8px; font-size: 1.05rem; }
+.body p { margin: 0 0 16px; color: var(--muted); line-height: 1.5; }
 
 button {
   appearance: none;
@@ -110,10 +94,7 @@ button {
   cursor: pointer;
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
+button:disabled { opacity: 0.6; cursor: wait; }
 
 .result {
   margin-top: 16px;
